@@ -1,0 +1,22 @@
+# Default knobs for the Streamlit estimator explorer.
+model:
+  d_model: 512
+  d_ff: 2048
+  n_layers: 8
+  n_heads: 8
+  n_kv_heads: 8
+  head_dim: 64
+  vocab_size: 32000
+  tied_embeddings: false
+
+runtime:
+  batch_size: 8
+  seq_len: 1024
+  bytes_param: 2
+  bytes_grad: 2
+  bytes_opt_state: 4
+  num_opt_states: 2
+  bytes_kv: 1
+  act_coeff: 7
+
+hardware: mps_m3_max
