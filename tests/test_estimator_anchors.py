@@ -57,10 +57,6 @@ def test_kv_cache_per_token_64L_4096D_int8():
 
 
 def test_training_flops_70B_15T_tokens():
-    class _M:
-        pass
-
-    fake = _M()
     # Use rule-of-thumb directly with a stand-in param count.
     total = 6 * 70e9 * 15e12
     assert math.isclose(total, 6.3e24, rel_tol=1e-9)

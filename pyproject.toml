@@ -53,6 +53,11 @@ target-version = "py311"
 select = ["E", "F", "I", "B", "UP", "SIM"]
 ignore = ["E501"]
 
+[tool.ruff.lint.per-file-ignores]
+# jaxtyping shape strings look like forward refs to ruff.
+"tests/adapters.py" = ["F722", "F821"]
+"src/lfslab/model.py" = ["F722", "F821"]
+
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true

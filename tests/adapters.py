@@ -187,7 +187,9 @@ def get_tokenizer(
     merges: list[tuple[bytes, bytes]],
     special_tokens: list[str] | None = None,
 ) -> Any:
-    raise NotImplementedError
+    from lfslab.tokenizer import Tokenizer
+
+    return Tokenizer(vocab, merges, special_tokens)
 
 
 def run_train_bpe(
@@ -196,4 +198,6 @@ def run_train_bpe(
     special_tokens: list[str],
     **kwargs,
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
-    raise NotImplementedError
+    from lfslab.tokenizer import train_bpe
+
+    return train_bpe(input_path, vocab_size, special_tokens)
