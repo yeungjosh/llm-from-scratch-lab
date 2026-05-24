@@ -93,6 +93,23 @@ def decode_step_time_lower_bound_s(
     ) / total_memory_bandwidth_bytes_per_s
 
 
+def train_time_estimate_s(
+    train_flops: float,
+    hardware: HardwareSpec,
+    num_devices: int = 1,
+) -> float:
+    """Wall-clock training time given total FLOPs, hardware peak, MFU, parallelism.
+
+    t = total_flops / (num_devices * peak_flops_per_s * mfu)
+    """
+    return train_flops / (num_devices * hardware.peak_flops_per_s * hardware.mfu)
+
+
+def roofline_intensity_threshold(hardware: HardwareSpec) -> float:
+    """Arithmetic-intensity (FLOPs / byte) above which a kernel is compute-bound."""
+    return hardware.peak_flops_per_s / hardware.memory_bandwidth_bytes_per_s
+
+
 def tokens_per_second_upper_bound(
     batch_size: int,
     kv_cache_bytes_per_seq: int,
