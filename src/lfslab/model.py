@@ -1,13 +1,101 @@
-"""Decoder-only Transformer. Phase 2.
+"""Decoder-only Transformer (RMSNorm + SwiGLU + RoPE + causal MHA, pre-norm).
 
-RMSNorm + SwiGLU + RoPE + causal multi-head attention, pre-norm residual.
-Anchors against CS336 A1 adapters.
+CS336 A1-compatible state_dict keys:
+  token_embeddings.weight
+  layers.{i}.attn.q_proj.weight
+  layers.{i}.attn.k_proj.weight
+  layers.{i}.attn.v_proj.weight
+  layers.{i}.attn.output_proj.weight
+  layers.{i}.ln1.weight
+  layers.{i}.ffn.w1.weight
+  layers.{i}.ffn.w2.weight
+  layers.{i}.ffn.w3.weight
+  layers.{i}.ln2.weight
+  ln_final.weight
+  lm_head.weight
 """
 
 from __future__ import annotations
 
+import math
+
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+
+# --- functional primitives ---------------------------------------------------
+
+
+def silu(x: torch.Tensor) -> torch.Tensor:
+    return x * torch.sigmoid(x)
+
+
+def rmsnorm_functional(
+    x: torch.Tensor, weight: torch.Tensor, eps: float = 1e-5
+) -> torch.Tensor:
+    in_dtype = x.dtype
+    x32 = x.to(torch.float32)
+    rms = torch.sqrt(x32.pow(2).mean(dim=-1, keepdim=True) + eps)
+    return (x32 / rms * weight.to(torch.float32)).to(in_dtype)
+
+
+def swiglu_functional(
+    x: torch.Tensor,
+    w1: torch.Tensor,
+    w2: torch.Tensor,
+    w3: torch.Tensor,
+) -> torch.Tensor:
+    """SwiGLU: w2(silu(x @ w1.T) * (x @ w3.T))."""
+    return F.linear(silu(F.linear(x, w1)) * F.linear(x, w3), w2)
+
+
+def softmax(x: torch.Tensor, dim: int) -> torch.Tensor:
+    x = x - x.amax(dim=dim, keepdim=True)
+    e = x.exp()
+    return e / e.sum(dim=dim, keepdim=True)
+
+
+def scaled_dot_product_attention(
+    Q: torch.Tensor,
+    K: torch.Tensor,
+    V: torch.Tensor,
+    mask: torch.Tensor | None = None,
+) -> torch.Tensor:
+    d_k = Q.shape[-1]
+    scores = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(d_k)
+    if mask is not None:
+        # mask is True where attention is allowed.
+        scores = scores.masked_fill(~mask, float("-inf"))
+    attn = softmax(scores, dim=-1)
+    return torch.matmul(attn, V)
+
+
+def _rope_cache(d_k: int, theta: float, max_seq_len: int, device, dtype=torch.float32):
+    assert d_k % 2 == 0, "RoPE requires even head_dim"
+    inv_freq = 1.0 / (theta ** (torch.arange(0, d_k, 2, device=device, dtype=dtype) / d_k))
+    positions = torch.arange(max_seq_len, device=device, dtype=dtype)
+    freqs = torch.outer(positions, inv_freq)  # (max_seq_len, d_k/2)
+    return freqs.cos(), freqs.sin()
+
+
+def apply_rope(
+    x: torch.Tensor,
+    positions: torch.Tensor,
+    cos_cache: torch.Tensor,
+    sin_cache: torch.Tensor,
+) -> torch.Tensor:
+    """x: (..., seq_len, d_k). positions: (..., seq_len) integer."""
+    cos = cos_cache[positions]  # (..., seq_len, d_k/2)
+    sin = sin_cache[positions]
+    x1 = x[..., 0::2]
+    x2 = x[..., 1::2]
+    out = torch.empty_like(x)
+    out[..., 0::2] = x1 * cos - x2 * sin
+    out[..., 1::2] = x1 * sin + x2 * cos
+    return out
+
+
+# --- nn.Module wrappers ------------------------------------------------------
 
 
 class RMSNorm(nn.Module):
@@ -17,7 +105,7 @@ class RMSNorm(nn.Module):
         self.weight = nn.Parameter(torch.ones(d_model))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError("Phase 2")
+        return rmsnorm_functional(x, self.weight, self.eps)
 
 
 class SwiGLU(nn.Module):
@@ -28,7 +116,7 @@ class SwiGLU(nn.Module):
         self.w3 = nn.Linear(d_model, d_ff, bias=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError("Phase 2")
+        return swiglu_functional(x, self.w1.weight, self.w2.weight, self.w3.weight)
 
 
 class RoPE(nn.Module):
@@ -37,9 +125,12 @@ class RoPE(nn.Module):
         self.d_k = d_k
         self.theta = theta
         self.max_seq_len = max_seq_len
+        cos, sin = _rope_cache(d_k, theta, max_seq_len, device=torch.device("cpu"))
+        self.register_buffer("cos_cache", cos, persistent=False)
+        self.register_buffer("sin_cache", sin, persistent=False)
 
     def forward(self, x: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError("Phase 2")
+        return apply_rope(x, positions, self.cos_cache, self.sin_cache)
 
 
 class CausalMultiHeadAttention(nn.Module):
@@ -55,8 +146,24 @@ class CausalMultiHeadAttention(nn.Module):
         self.output_proj = nn.Linear(d_model, d_model, bias=False)
         self.rope = rope
 
-    def forward(self, x: torch.Tensor, positions: torch.Tensor | None = None) -> torch.Tensor:
-        raise NotImplementedError("Phase 2")
+    def forward(
+        self, x: torch.Tensor, positions: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        B, T, _ = x.shape
+        H, D = self.num_heads, self.head_dim
+        q = self.q_proj(x).view(B, T, H, D).transpose(1, 2)  # (B, H, T, D)
+        k = self.k_proj(x).view(B, T, H, D).transpose(1, 2)
+        v = self.v_proj(x).view(B, T, H, D).transpose(1, 2)
+        if self.rope is not None:
+            if positions is None:
+                positions = torch.arange(T, device=x.device)
+            # Broadcast positions across batch + heads.
+            q = apply_rope(q, positions, self.rope.cos_cache, self.rope.sin_cache)
+            k = apply_rope(k, positions, self.rope.cos_cache, self.rope.sin_cache)
+        mask = torch.tril(torch.ones(T, T, dtype=torch.bool, device=x.device))
+        out = scaled_dot_product_attention(q, k, v, mask=mask)  # (B, H, T, D)
+        out = out.transpose(1, 2).contiguous().view(B, T, self.d_model)
+        return self.output_proj(out)
 
 
 class TransformerBlock(nn.Module):
@@ -75,8 +182,12 @@ class TransformerBlock(nn.Module):
         self.ln2 = RMSNorm(d_model)
         self.ffn = SwiGLU(d_model, d_ff)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError("Phase 2")
+    def forward(
+        self, x: torch.Tensor, positions: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        x = x + self.attn(self.ln1(x), positions=positions)
+        x = x + self.ffn(self.ln2(x))
+        return x
 
 
 class TransformerLM(nn.Module):
@@ -89,6 +200,7 @@ class TransformerLM(nn.Module):
         num_heads: int,
         d_ff: int,
         rope_theta: float = 10000.0,
+        tied_embeddings: bool = False,
     ) -> None:
         super().__init__()
         self.vocab_size = vocab_size
@@ -100,10 +212,24 @@ class TransformerLM(nn.Module):
         )
         self.ln_final = RMSNorm(d_model)
         self.lm_head = nn.Linear(d_model, vocab_size, bias=False)
+        if tied_embeddings:
+            self.lm_head.weight = self.token_embeddings.weight
 
     def forward(self, in_indices: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError("Phase 2")
+        x = self.token_embeddings(in_indices)
+        positions = torch.arange(in_indices.shape[-1], device=in_indices.device)
+        for layer in self.layers:
+            x = layer(x, positions=positions)
+        x = self.ln_final(x)
+        return self.lm_head(x)
 
 
 def param_count(model: nn.Module) -> int:
-    return sum(p.numel() for p in model.parameters())
+    seen: set[int] = set()
+    total = 0
+    for p in model.parameters():
+        if id(p) in seen:
+            continue
+        seen.add(id(p))
+        total += p.numel()
+    return total
