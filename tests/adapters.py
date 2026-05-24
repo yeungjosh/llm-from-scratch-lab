@@ -214,7 +214,9 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
 def run_get_batch(
     dataset: npt.NDArray, batch_size: int, context_length: int, device: str
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    raise NotImplementedError  # Phase 3
+    from lfslab.train import get_batch
+
+    return get_batch(dataset, batch_size, context_length, device)
 
 
 def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, " ..."]:
@@ -226,15 +228,21 @@ def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, "
 def run_cross_entropy(
     inputs: Float[Tensor, " batch_size vocab_size"], targets: Int[Tensor, " batch_size"]
 ) -> Float[Tensor, ""]:
-    raise NotImplementedError  # Phase 3
+    from lfslab.train import cross_entropy
+
+    return cross_entropy(inputs, targets)
 
 
 def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
-    raise NotImplementedError  # Phase 3
+    from lfslab.train import gradient_clipping
+
+    return gradient_clipping(parameters, max_l2_norm)
 
 
 def get_adamw_cls() -> Any:
-    raise NotImplementedError  # Phase 3
+    from lfslab.train import AdamW
+
+    return AdamW
 
 
 def run_get_lr_cosine_schedule(
@@ -257,7 +265,9 @@ def run_save_checkpoint(
     iteration: int,
     out: str | os.PathLike | BinaryIO | IO[bytes],
 ):
-    raise NotImplementedError  # Phase 3
+    from lfslab.train import save_checkpoint
+
+    return save_checkpoint(model, optimizer, iteration, out)
 
 
 def run_load_checkpoint(
@@ -265,7 +275,9 @@ def run_load_checkpoint(
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
 ) -> int:
-    raise NotImplementedError  # Phase 3
+    from lfslab.train import load_checkpoint
+
+    return load_checkpoint(src, model, optimizer)
 
 
 def get_tokenizer(
