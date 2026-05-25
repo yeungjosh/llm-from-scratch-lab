@@ -4,8 +4,8 @@ A from-scratch decoder-only language model in PyTorch, plus a closed-form scalin
 memory / latency estimator and an interactive Streamlit explorer that overlays
 **measured** local benchmarks against **simulated** estimator curves.
 
-Inspired by Stanford CS336 (Spring 2025) and the JAX Scaling Book.
-Independent reimplementation — not coursework.
+Inspired by Stanford CS336 (Spring 2025) and the JAX Scaling Book. This is an
+independent reimplementation, not coursework.
 
 [![CI](https://github.com/yeungjosh/llm-from-scratch-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/yeungjosh/llm-from-scratch-lab/actions/workflows/ci.yml)
 
@@ -13,7 +13,7 @@ Independent reimplementation — not coursework.
 
 Two things I wanted in one repo:
 1. A correct, tested, end-to-end transformer trained on TinyStories that runs on a MacBook.
-2. A transparent assumptions model — closed-form formulas for parameters, training FLOPs, activation memory, KV-cache size, decode latency — calibrated against real measurements.
+2. A transparent assumptions model: closed-form formulas for parameters, training FLOPs, activation memory, KV-cache size, and decode latency, calibrated against real measurements.
 
 Most "GPT from scratch" repos stop at (1). The interesting questions live in (2):
 where does the back-of-envelope estimator agree with reality, and where does it break?
@@ -88,16 +88,16 @@ populates with measured-vs-predicted scatter + percent-error table.
 
 ## Status (8 phases shipped)
 
-- [x] Phase 0 — Bootstrap (`uv`, src/ layout, CI, anchor tests)
-- [x] Phase 1 — Byte-level BPE tokenizer + TinyStories data path
-- [x] Phase 2 — Decoder-only Transformer core (RMSNorm + SwiGLU + RoPE + causal MHA)
-- [x] Phase 3 — Training loop (AdamW, cosine schedule, grad clip, checkpoints, smoke train)
-- [x] Phase 4 — `torch.profiler` harness + seq/batch sweep
-- [x] Phase 5 — Scaling estimator (params, FLOPs, activation, KV, decode latency, train time, roofline)
-- [x] Phase 6 — Streamlit explorer with measured-vs-estimated overlay
-- [x] Phase 9 — Technical note (calibration study, [reports/technical_note.md](reports/technical_note.md))
-- [ ] Phase 7 — KV-cache toy decode (optional)
-- [ ] Phase 8 — Cloud GPU validation appendix (optional)
+- [x] Phase 0. Bootstrap (`uv`, src/ layout, CI, anchor tests)
+- [x] Phase 1. Byte-level BPE tokenizer + TinyStories data path
+- [x] Phase 2. Decoder-only Transformer core (RMSNorm + SwiGLU + RoPE + causal MHA)
+- [x] Phase 3. Training loop (AdamW, cosine schedule, grad clip, checkpoints, smoke train)
+- [x] Phase 4. `torch.profiler` harness + seq/batch sweep
+- [x] Phase 5. Scaling estimator (params, FLOPs, activation, KV, decode latency, train time, roofline)
+- [x] Phase 6. Streamlit explorer with measured-vs-estimated overlay
+- [x] Phase 7. KV-cache toy decode
+- [x] Phase 9. Technical note (calibration study, [reports/technical_note.md](reports/technical_note.md))
+- [ ] Phase 8. Cloud GPU validation appendix (optional)
 
 ## Anchor tests (JAX Scaling Book worked examples)
 
@@ -124,9 +124,9 @@ src/lfslab/
   estimator.py        # closed-form params / FLOPs / memory / latency (pure-Python)
   hardware.py         # device catalogue (Apple CPU, MPS, T4, A10G, A100, H100)
   plotting.py         # Plotly chart DataFrame helpers, provenance labels
-  kv_cache_toy.py     # cached autoregressive decode (Phase 7, optional)
+  kv_cache_toy.py     # cached autoregressive decode
 app/streamlit_app.py  # Plotly explorer with measured-vs-estimated overlay
-tests/                # 64 tests (model, training, estimator, profile, app)
+tests/                # 68 tests (model, training, estimator, profile, app)
 configs/              # tiny_cpu.yaml, tiny_mps.yaml, estimator_defaults.yaml
 scripts/              # download_data.py, tokenize_corpus.py
 reports/              # technical_note.md

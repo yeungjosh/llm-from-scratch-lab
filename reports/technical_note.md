@@ -1,6 +1,6 @@
 # Where does the simple memory-bandwidth estimator break on Apple silicon?
 
-> Independent reimplementation of a small decoder-only transformer + a closed-form
+> Independent reimplementation of a small decoder-only transformer plus a closed-form
 > scaling / memory / latency estimator, calibrated against measured benchmarks on
 > a MacBook. Inspired by Stanford CS336 and the JAX Scaling Book.
 
@@ -13,17 +13,17 @@ upper bound for decode-style inference:
 tokens/s_max  =  (batch · total_memory_bandwidth) / (batch · kv_cache_per_seq + parameter_bytes)
 ```
 
-This is an upper bound. It assumes the kernel is **purely memory-bound** — every
+This is an upper bound. It assumes the kernel is **purely memory-bound**. Every
 parameter and KV-cache byte streams through HBM (or unified memory on Apple
-silicon) at peak bandwidth, with compute essentially free in comparison. It
-collapses several real effects into one number.
+silicon) at peak bandwidth, with compute essentially free in comparison. The
+formula collapses several real effects into one number.
 
 Concrete question for this note: **how far off is this upper bound on a real
 MacBook CPU run with a small model?** Specifically:
 
 - Which dimension drives error: batch size, sequence length, or model size?
 - Where is the estimator usefully tight (≤ 15% error)?
-- Where does it overestimate by 2–3×, and what mechanism explains it?
+- Where does it overestimate by 2 to 3x, and what mechanism explains it?
 
 ## Setup
 
@@ -112,7 +112,7 @@ when re-using cached parameters.
 
 These changes turn the formula from a single number into a piecewise estimate.
 The current single-number form is most useful when the model is large enough
-that parameters demonstrably do not fit in cache — which, for a MacBook study
+that parameters demonstrably do not fit in cache, which, for a MacBook study
 of model implementations, is rarely the case at the smoke-training scale.
 
 ## Follow-up: MPS sweep
@@ -144,7 +144,7 @@ catalogued M3-Max peak memory bandwidth of **400 GB/s**.
 
 1. **Direction flip with seq_len, not just batch.** On CPU the estimator
    was consistently *too optimistic*. On MPS it is *too pessimistic* across
-   the entire `seq_len ∈ {256, 512}` band at small/medium batch — measured
+   the entire `seq_len ∈ {256, 512}` band at small to medium batch. Measured
    tokens/s exceeds the "upper" bound by **+95 % to +154 %**. Either the
    peak-bandwidth number we used (400 GB/s) understates what the kernel
    actually achieves, or some computation is happening from on-chip caches
@@ -156,7 +156,7 @@ catalogued M3-Max peak memory bandwidth of **400 GB/s**.
    overhead, so its prediction at small seq is wildly optimistic.
 
 3. **Step-time cliff at `seq=512, batch=8`.** Step time jumps from ~3 ms at
-   batch=4 to **21 ms at batch=8** — a ~5× regression. Measured tokens/s
+   batch=4 to **21 ms at batch=8**, a ~5× regression. Measured tokens/s
    collapses from 462k to 194k. This is exactly the kind of memory-pressure
    discontinuity unified-memory devices can exhibit but the formula cannot
    see; if you only trusted the linear-in-batch model you would size your
@@ -175,7 +175,7 @@ unified-memory hardware**. The estimator should at minimum:
 ## Sanity check: the model actually trains
 
 Before trusting any of the above measurements, I wanted independent evidence
-that the training stack is correct — i.e. that the loss is doing something
+that the training stack is correct, i.e. that the loss is doing something
 sensible and not getting nan'd by a precision bug, or hovering at uniform-output
 entropy because of a broken mask. So I trained the `tiny_mps` config (6 layers,
 d_model=256, d_ff=1024, ctx=512, batch=8) on 100 MB of TinyStories (24.3 M
@@ -193,7 +193,7 @@ tokens) for 2,000 steps on MPS.
 
 A clean two-decade drop with the cosine schedule visibly cooling the moving
 average in the second half. The val-PPL of ~20 is in the right neighborhood
-for a small TinyStories model — for comparison, the original TinyStories paper
+for a small TinyStories model; for comparison, the original TinyStories paper
 reports PPLs in the same ballpark for similarly tiny models. This is a
 correctness sanity check, not a SOTA claim.
 
@@ -204,7 +204,7 @@ to NaN. None of that happened.
 
 ## Caveats
 
-- 5–10 forward passes per cell is small and noisy; numbers within ±10 % are not
+- 5 to 10 forward passes per cell is small and noisy; numbers within ±10 % are not
   meaningful as deltas, only as ballpark.
 - "Peak memory bandwidth" is an Apple-published number for the full memory
   controller; Python-PyTorch never approaches that limit at this model size.
@@ -215,8 +215,8 @@ to NaN. None of that happened.
 ## Reproducibility
 
 - Code: <https://github.com/yeungjosh/llm-from-scratch-lab>
-- Phase 0–6 commit: `git log --oneline` shows one commit per phase
-- 64-test suite, including 8 anchor tests against JAX Scaling Book worked
+- Phase 0 through 6 commit: `git log --oneline` shows one commit per phase
+- 68-test suite, including 8 anchor tests against JAX Scaling Book worked
   examples (16B param check, 512 KiB/token KV check, 6.3e24 FLOPs check,
   2.5 ms decode lower bound, 70B Llama-shape param check, etc.)
 - Sweep script: `lfslab.profile_train.sweep(...)` writes a `results/local/sweep_cpu.json`
