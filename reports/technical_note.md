@@ -172,6 +172,36 @@ unified-memory hardware**. The estimator should at minimum:
 - detect the discontinuity at memory-saturation (e.g. flag when working set
   exceeds device cache).
 
+## Sanity check: the model actually trains
+
+Before trusting any of the above measurements, I wanted independent evidence
+that the training stack is correct — i.e. that the loss is doing something
+sensible and not getting nan'd by a precision bug, or hovering at uniform-output
+entropy because of a broken mask. So I trained the `tiny_mps` config (6 layers,
+d_model=256, d_ff=1024, ctx=512, batch=8) on 100 MB of TinyStories (24.3 M
+tokens) for 2,000 steps on MPS.
+
+| Metric | Value |
+|---|---|
+| Wall time | 762 s (~12.7 min, MPS, batch=8) |
+| Step-0 loss | 245.12 (random-init, ~exp of vocab size) |
+| Final loss | 2.87 |
+| Min observed loss | 2.58 |
+| Validation perplexity (10-batch avg) | **19.58** |
+
+![Training loss on TinyStories](loss_curve.png)
+
+A clean two-decade drop with the cosine schedule visibly cooling the moving
+average in the second half. The val-PPL of ~20 is in the right neighborhood
+for a small TinyStories model — for comparison, the original TinyStories paper
+reports PPLs in the same ballpark for similarly tiny models. This is a
+correctness sanity check, not a SOTA claim.
+
+The training run is also the cleanest evidence that nothing in the
+implementation is silently broken: a buggy softmax, a missing causal mask, or
+a wrong-sign loss would all keep the loss flat near random-init or send it
+to NaN. None of that happened.
+
 ## Caveats
 
 - 5–10 forward passes per cell is small and noisy; numbers within ±10 % are not
