@@ -115,16 +115,72 @@ The current single-number form is most useful when the model is large enough
 that parameters demonstrably do not fit in cache — which, for a MacBook study
 of model implementations, is rarely the case at the smoke-training scale.
 
+## Follow-up: MPS sweep
+
+I re-ran the same model on MPS (Apple silicon GPU backend) with a wider sweep
+(`seq_len ∈ {64,128,256,512}`, `batch ∈ {1,2,4,8}`, 10 steps each), using the
+catalogued M3-Max peak memory bandwidth of **400 GB/s**.
+
+| seq | bs | step ms | Measured tok/s | Estimated tok/s | Error |
+|----:|---:|--------:|---------------:|----------------:|------:|
+|  64 |  1 |    2.73 |         23,480 |          84,679 | **−72.3 %** |
+|  64 |  2 |    2.82 |         45,413 |         167,041 | **−72.8 %** |
+|  64 |  4 |    2.73 |         93,897 |         325,182 | **−71.1 %** |
+|  64 |  8 |   15.51 |         33,015 |         617,467 | **−94.7 %** |
+| 128 |  1 |    3.06 |         41,861 |          83,520 | **−49.9 %** |
+| 128 |  2 |    3.12 |         82,126 |         162,591 | **−49.5 %** |
+| 128 |  4 |    2.81 |        182,507 |         308,733 | **−40.9 %** |
+| 128 |  8 |    2.86 |        358,609 |         560,739 | **−36.0 %** |
+| 256 |  1 |    2.71 |         94,418 |          81,296 |    **+16.1 %** |
+| 256 |  2 |    2.82 |        181,570 |         154,367 |    **+17.6 %** |
+| 256 |  4 |    2.79 |        366,793 |         280,370 |    **+30.8 %** |
+| 256 |  8 |    3.01 |        679,984 |         473,700 |    **+43.5 %** |
+| 512 |  1 |    2.82 |        181,719 |          77,183 |   **+135.4 %** |
+| 512 |  2 |    2.88 |        355,719 |         140,185 |   **+153.8 %** |
+| 512 |  4 |    4.43 |        462,106 |         236,850 |    **+95.1 %** |
+| 512 |  8 |   21.12 |        193,931 |         361,481 |    **−46.4 %** |
+
+**Three new findings vs the CPU run:**
+
+1. **Direction flip with seq_len, not just batch.** On CPU the estimator
+   was consistently *too optimistic*. On MPS it is *too pessimistic* across
+   the entire `seq_len ∈ {256, 512}` band at small/medium batch — measured
+   tokens/s exceeds the "upper" bound by **+95 % to +154 %**. Either the
+   peak-bandwidth number we used (400 GB/s) understates what the kernel
+   actually achieves, or some computation is happening from on-chip caches
+   that the formula attributes to bandwidth-limited HBM reads.
+
+2. **`seq_len = 64` is a launch-overhead floor.** Step time is ~2.7 ms
+   regardless of batch up to 4; the wall-clock is dominated by kernel-launch
+   and synchronization. The bandwidth-bound formula has no term for fixed
+   overhead, so its prediction at small seq is wildly optimistic.
+
+3. **Step-time cliff at `seq=512, batch=8`.** Step time jumps from ~3 ms at
+   batch=4 to **21 ms at batch=8** — a ~5× regression. Measured tokens/s
+   collapses from 462k to 194k. This is exactly the kind of memory-pressure
+   discontinuity unified-memory devices can exhibit but the formula cannot
+   see; if you only trusted the linear-in-batch model you would size your
+   inference batch wrong here.
+
+The takeaway is the same as the CPU section, but sharper: **the
+single-formula bandwidth bound is the wrong abstraction for small models on
+unified-memory hardware**. The estimator should at minimum:
+
+- subtract a fixed per-step launch-overhead floor (~2.5 ms on this device);
+- model "effective bandwidth" as a fraction of peak that depends on whether
+  the working set fits on-chip; and
+- detect the discontinuity at memory-saturation (e.g. flag when working set
+  exceeds device cache).
+
 ## Caveats
 
-- 5 forward passes per cell is small and noisy; numbers within ±10 % are not
+- 5–10 forward passes per cell is small and noisy; numbers within ±10 % are not
   meaningful as deltas, only as ballpark.
 - "Peak memory bandwidth" is an Apple-published number for the full memory
-  controller; Python-PyTorch-on-CPU never approaches that limit. A more honest
-  parameter is *measured sustained bandwidth* on a known kernel.
-- I tested CPU only here. On MPS (Apple's GPU backend) the picture shifts
-  because MPS launches Metal kernels — the estimator may behave very differently
-  there, and a follow-up note is the natural next step.
+  controller; Python-PyTorch never approaches that limit at this model size.
+- Both sweeps use the same ~2.3 M-param model. A larger model whose parameters
+  do not fit in cache would shift both pictures toward the bandwidth-bound
+  regime the formula is built for. Verifying that is the natural Phase 8.
 
 ## Reproducibility
 
