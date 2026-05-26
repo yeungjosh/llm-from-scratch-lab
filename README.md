@@ -9,17 +9,25 @@ independent reimplementation, not coursework.
 
 [![CI](https://github.com/yeungjosh/llm-from-scratch-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/yeungjosh/llm-from-scratch-lab/actions/workflows/ci.yml)
 
-## Why
+## TL;DR
+
+I built a small language model from scratch in PyTorch and trained it on TinyStories, a corpus of children's stories used as a teaching dataset. The model runs on a MacBook and it works: give it the start of a sentence, it finishes the story. Training drops the loss from 245 to 2.87 in about 13 minutes on Apple silicon, with validation perplexity around 20.
+
+The model itself is the easy part. Small language models trained on TinyStories are a solved exercise. The work I cared about is what's around the model.
+
+I wrote a closed-form formula (from a published systems book) that predicts how fast such a model should run on given hardware. Parameters, FLOPs, memory bandwidth, that kind of math. Then I ran real benchmarks on two devices (my Mac's CPU, then its GPU) and compared the formula's predictions to what actually happened.
+
+The formula was wrong. Sometimes wildly wrong: off by 154% in one direction at long sequences, off by 65% in another at moderate batch sizes, depending on the configuration. I wrote up exactly where it breaks and why, proposed four specific fixes, and implemented the first two. Re-running the benchmarks against the fixed formula cut the average error roughly in half (mean absolute error went from 64% to 29%, and the remaining outliers have a known cause that the third proposed fix would address).
+
+So this repo is three artifacts stacked: a working from-scratch language model, a transparent assumptions model for predicting its behavior, and a short calibration study showing where the predictions break and how iterating improves them. That third layer is where most of the engineering content lives. See [reports/technical_note.md](reports/technical_note.md) for the full calibration writeup and [reports/blog_drafts/01-when-the-estimator-breaks.md](reports/blog_drafts/01-when-the-estimator-breaks.md) for a shorter narrative version.
+
+## Why this scope
 
 Two things I wanted in one repo:
 1. A correct, tested, end-to-end transformer trained on TinyStories that runs on a MacBook.
 2. A transparent assumptions model: closed-form formulas for parameters, training FLOPs, activation memory, KV-cache size, and decode latency, calibrated against real measurements.
 
-Most "GPT from scratch" repos stop at (1). The interesting questions live in (2):
-where does the back-of-envelope estimator agree with reality, and where does it break?
-See [reports/technical_note.md](reports/technical_note.md) for a calibration study
-that finds the bandwidth-bound upper bound for `tokens/s` is wildly loose at
-`batch ≥ 2` on Apple silicon for a small model, and discusses why.
+Most "GPT from scratch" repos stop at (1). The interesting questions live in (2): where does the back-of-envelope estimator agree with reality, and where does it break?
 
 ## Quickstart (target: under 15 minutes from clone to charts)
 
