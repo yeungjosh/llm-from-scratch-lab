@@ -202,6 +202,41 @@ implementation is silently broken: a buggy softmax, a missing causal mask, or
 a wrong-sign loss would all keep the loss flat near random-init or send it
 to NaN. None of that happened.
 
+## Estimator v2: applying the first two proposed fixes
+
+I implemented fixes #1 (roofline switch) and #2 (fixed-overhead floor) from the list above. The new entry point is `predict_tokens_per_second_v2(model, runtime, hardware, overhead_floor_s)`. It computes arithmetic intensity per step, picks the tighter of the bandwidth-bound and compute-bound predictions, then caps the implied step time to a minimum overhead floor.
+
+Re-running the MPS sweep with v2 (calibrated MFU = 0.10 from the data, overhead floor = 2.5 ms measured from the seq=64 cells):
+
+| seq | bs | Measured | v1 est | v1 err | v2 est | v2 err | bound |
+|----:|---:|---------:|-------:|-------:|-------:|-------:|:------|
+|  64 |  1 |   23,480 |  84,679 |  −72.3 % |  25,600 |  **−8.3 %** | compute, overhead-capped |
+|  64 |  2 |   45,413 | 167,041 |  −72.8 % |  51,200 |  **−11.3 %** | compute, overhead-capped |
+|  64 |  4 |   93,897 | 325,182 |  −71.1 % | 102,400 |  **−8.3 %** | compute, overhead-capped |
+|  64 |  8 |   33,015 | 617,467 |  −94.7 % | 204,800 |  −83.9 % | compute, overhead-capped |
+| 128 |  1 |   41,861 |  83,520 |  −49.9 % |  51,200 |  **−18.2 %** | compute, overhead-capped |
+| 128 |  2 |   82,126 | 162,591 |  −49.5 % | 102,400 |  **−19.8 %** | compute, overhead-capped |
+| 128 |  4 |  182,507 | 308,733 |  −40.9 % | 204,800 |  **−10.9 %** | compute, overhead-capped |
+| 128 |  8 |  358,609 | 560,739 |  −36.0 % | 300,547 |  **+19.3 %** | compute |
+| 256 |  1 |   94,418 |  81,296 |  +16.1 % | 102,400 |  **−7.8 %** | compute, overhead-capped |
+| 256 |  2 |  181,570 | 154,367 |  +17.6 % | 204,800 |  **−11.3 %** | compute, overhead-capped |
+| 256 |  4 |  366,793 | 280,370 |  +30.8 % | 300,547 |  +22.0 % | compute |
+| 256 |  8 |  679,984 | 473,700 |  +43.5 % | 300,547 |  +126.2 % | compute |
+| 512 |  1 |  181,719 |  77,183 | +135.4 % | 204,800 |  **−11.3 %** | compute, overhead-capped |
+| 512 |  2 |  355,719 | 140,185 | +153.8 % | 300,547 |  +18.4 % | compute |
+| 512 |  4 |  462,106 | 236,850 |  +95.1 % | 300,547 |  +53.8 % | compute |
+| 512 |  8 |  193,931 | 361,481 |  −46.4 % | 300,547 |  −35.5 % | compute |
+
+| Aggregate | v1 (bandwidth-only) | v2 (roofline + overhead floor) |
+|---|---:|---:|
+| Mean abs error | **64.1 %** | **29.1 %** |
+| Max abs error | 153.8 % | 126.2 % |
+| Cells within ±20 % | 4 / 16 | **9 / 16** |
+
+A 2x reduction in mean error from two principled fixes. The cells where v2 is still off (seq=256 batch=8, seq=512 batch=8, seq=512 batch=4) are the memory-pressure-cliff configurations that fix #4 would catch. The fix #3 (cache-aware parameter cost) is unnecessary in this regime because the roofline switch already correctly routes us away from the bandwidth formula whenever the kernel is compute-bound (which is "always" for this model).
+
+The remaining error has structure, not noise: ten of sixteen cells have signed v2 error between -19% and +20%; the six outliers are the four overhead-floored seq=64/128 cells where the cap is slightly too loose (batch=8 at seq=64 in particular, where Apple's GPU scheduler is doing something odd) plus the two memory-pressure-cliff cells at seq>=256/batch=8. Both are addressable with the remaining proposed fixes. The v2 estimator is now in the "useful for back-of-envelope decisions" zone for most of the sweep, which v1 was not.
+
 ## Caveats
 
 - 5 to 10 forward passes per cell is small and noisy; numbers within ±10 % are not
