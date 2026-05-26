@@ -114,7 +114,7 @@ def get_lr_cosine_schedule(
     cosine_cycle_iters: int,
 ) -> float:
     if it < warmup_iters:
-        return max_learning_rate * (it + 1) / warmup_iters
+        return max_learning_rate * it / warmup_iters
     if it > cosine_cycle_iters:
         return min_learning_rate
     progress = (it - warmup_iters) / max(1, cosine_cycle_iters - warmup_iters)

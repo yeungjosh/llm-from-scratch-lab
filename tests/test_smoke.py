@@ -39,7 +39,7 @@ def test_lr_schedule_warmup_and_decay():
     from lfslab.train import get_lr_cosine_schedule
 
     assert get_lr_cosine_schedule(0, 1.0, 0.1, 10, 100) < 1.0
-    assert get_lr_cosine_schedule(9, 1.0, 0.1, 10, 100) == 1.0
+    assert get_lr_cosine_schedule(10, 1.0, 0.1, 10, 100) == 1.0
     assert get_lr_cosine_schedule(200, 1.0, 0.1, 10, 100) == 0.1
 
 

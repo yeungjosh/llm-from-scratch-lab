@@ -44,14 +44,17 @@ def test_get_batch_shapes_and_shift():
 
 
 def test_lr_schedule_endpoints():
-    assert get_lr_cosine_schedule(0, 1.0, 0.1, 10, 100) > 0
-    assert get_lr_cosine_schedule(9, 1.0, 0.1, 10, 100) == 1.0
+    # Warmup convention: lr(it=0) = 0, lr(it=warmup_iters) = max_lr.
+    assert get_lr_cosine_schedule(0, 1.0, 0.1, 10, 100) == 0.0
+    assert get_lr_cosine_schedule(10, 1.0, 0.1, 10, 100) == 1.0
     assert get_lr_cosine_schedule(99, 1.0, 0.1, 10, 100) >= 0.1
     assert get_lr_cosine_schedule(300, 1.0, 0.1, 10, 100) == 0.1
 
 
 def test_lr_schedule_warmup_is_linear():
-    vals = [get_lr_cosine_schedule(i, 1.0, 0.0, 10, 100) for i in range(10)]
+    vals = [get_lr_cosine_schedule(i, 1.0, 0.0, 10, 100) for i in range(11)]
+    assert vals[0] == 0.0
+    assert vals[10] == 1.0
     diffs = [vals[i + 1] - vals[i] for i in range(len(vals) - 1)]
     assert max(diffs) - min(diffs) < 1e-9
 
