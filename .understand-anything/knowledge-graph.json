@@ -1,0 +1,585 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "name": "llm-from-scratch-lab",
+    "languages": ["Python", "YAML", "Markdown", "TOML"],
+    "frameworks": ["PyTorch", "Streamlit", "Plotly", "pytest"],
+    "description": "Decoder-only language model trained on TinyStories with a closed-form scaling/memory/latency estimator and Streamlit explorer. Key contribution: calibration study showing the JAX Scaling Book estimator is wrong by 65–154% and implementing fixes.",
+    "analyzedAt": "2026-05-26T00:00:00Z",
+    "gitCommitHash": "b65be2c33b9fe58feb38ba83b8a748efbc03b5e5"
+  },
+  "nodes": [
+    {
+      "id": "file:app/streamlit_app.py",
+      "type": "file",
+      "name": "streamlit_app.py",
+      "filePath": "app/streamlit_app.py",
+      "summary": "Interactive Streamlit explorer with 5 Plotly tabs: parameter count, KV cache, activation memory, decode latency frontier, and measured-vs-estimated overlay. Sidebar controls ModelSpec / RuntimeSpec / HardwareSpec.",
+      "tags": ["ui", "streamlit", "plotly", "explorer", "visualization"],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/lfslab/model.py",
+      "type": "file",
+      "name": "model.py",
+      "filePath": "src/lfslab/model.py",
+      "summary": "Decoder-only Transformer: RMSNorm, SwiGLU FFN, RoPE positional encoding, causal multi-head attention (GQA-ready), TransformerBlock (pre-norm), TransformerLM. CS336 A1-compatible state_dict keys.",
+      "tags": ["model", "transformer", "pytorch", "attention", "core"],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:src/lfslab/train.py",
+      "type": "file",
+      "name": "train.py",
+      "filePath": "src/lfslab/train.py",
+      "summary": "Training loop with custom AdamW optimizer, cosine LR schedule with linear warmup, gradient clipping, checkpointing, and validation perplexity. Reads YAML config, loads token streams, runs full train loop.",
+      "tags": ["training", "optimizer", "adamw", "schedule", "checkpoint"],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:src/lfslab/tokenizer.py",
+      "type": "file",
+      "name": "tokenizer.py",
+      "filePath": "src/lfslab/tokenizer.py",
+      "summary": "Byte-level BPE tokenizer with GPT-2 pretokenization pattern. train_bpe() builds vocab+merges; Tokenizer class encodes/decodes, handles special tokens, serializes to/from JSON+txt files.",
+      "tags": ["tokenizer", "bpe", "nlp", "preprocessing"],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:src/lfslab/estimator.py",
+      "type": "file",
+      "name": "estimator.py",
+      "filePath": "src/lfslab/estimator.py",
+      "summary": "Pure-Python closed-form scaling estimator. Computes: parameter count, training FLOPs, activation memory, KV cache bytes, decode latency lower bound, train time estimate, roofline intensity threshold. No torch dependency.",
+      "tags": ["estimator", "scaling", "roofline", "analytics", "pure-python"],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/lfslab/hardware.py",
+      "type": "file",
+      "name": "hardware.py",
+      "filePath": "src/lfslab/hardware.py",
+      "summary": "Device catalogue with HardwareSpec entries for Apple CPU, Apple M3 Max MPS, NVIDIA T4/A10G/A100/H100. pick_device() auto-selects best available torch device.",
+      "tags": ["hardware", "device", "catalogue", "gpu"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:src/lfslab/plotting.py",
+      "type": "file",
+      "name": "plotting.py",
+      "filePath": "src/lfslab/plotting.py",
+      "summary": "Plotly chart DataFrame helpers with provenance labels (Simulated/Measured/Hybrid). Produces DataFrames for params-vs-d_model, KV cache, activation memory curves, and measured_vs_estimated scatter.",
+      "tags": ["plotting", "pandas", "charts", "analytics"],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/lfslab/profile_train.py",
+      "type": "file",
+      "name": "profile_train.py",
+      "filePath": "src/lfslab/profile_train.py",
+      "summary": "torch.profiler harness for the MEASURED side. profile_one() times forward passes (warmup + timed steps), emits Chrome-trace JSON. sweep() runs the full seq_len × batch_size grid and writes results/local/sweep.json.",
+      "tags": ["profiling", "benchmark", "measured", "sweep"],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/lfslab/generate.py",
+      "type": "file",
+      "name": "generate.py",
+      "filePath": "src/lfslab/generate.py",
+      "summary": "Greedy / temperature / top-k autoregressive generation. generate() takes model + tokenizer, produces text. Truncates context to context_length if needed.",
+      "tags": ["generation", "inference", "sampling"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:src/lfslab/data.py",
+      "type": "file",
+      "name": "data.py",
+      "filePath": "src/lfslab/data.py",
+      "summary": "Dataset helpers: load_token_stream() mmaps a .npy token array, save_token_stream() writes uint16/uint32 .npy files. get_batch() stub (Phase 3).",
+      "tags": ["data", "dataset", "numpy", "mmap"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:src/lfslab/kv_cache_toy.py",
+      "type": "file",
+      "name": "kv_cache_toy.py",
+      "filePath": "src/lfslab/kv_cache_toy.py",
+      "summary": "Educational KV-cache decode. decode_with_cache() does prefill then O(1)-per-token decode by growing per-layer K/V tensors. full_recompute_decode() is the naive O(T²) baseline for comparison.",
+      "tags": ["kv-cache", "inference", "educational", "attention"],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/lfslab/__init__.py",
+      "type": "file",
+      "name": "__init__.py",
+      "filePath": "src/lfslab/__init__.py",
+      "summary": "Package init exposing __version__.",
+      "tags": ["package"],
+      "complexity": "simple"
+    },
+    {
+      "id": "config:configs/tiny_cpu.yaml",
+      "type": "config",
+      "name": "tiny_cpu.yaml",
+      "filePath": "configs/tiny_cpu.yaml",
+      "summary": "Training config for CPU runs: small model (d_model=128), short context, low batch size. Used for local smoke runs on MacBook CPU.",
+      "tags": ["config", "training", "cpu"],
+      "complexity": "simple"
+    },
+    {
+      "id": "config:configs/tiny_mps.yaml",
+      "type": "config",
+      "name": "tiny_mps.yaml",
+      "filePath": "configs/tiny_mps.yaml",
+      "summary": "Training config for Apple MPS (GPU) runs: larger model, longer sequences, higher batch size than CPU config.",
+      "tags": ["config", "training", "mps", "gpu"],
+      "complexity": "simple"
+    },
+    {
+      "id": "config:configs/estimator_defaults.yaml",
+      "type": "config",
+      "name": "estimator_defaults.yaml",
+      "filePath": "configs/estimator_defaults.yaml",
+      "summary": "Default ModelSpec/HardwareSpec values for the estimator explorer.",
+      "tags": ["config", "estimator"],
+      "complexity": "simple"
+    },
+    {
+      "id": "config:pyproject.toml",
+      "type": "config",
+      "name": "pyproject.toml",
+      "filePath": "pyproject.toml",
+      "summary": "Project manifest: hatchling build, torch/numpy/streamlit/plotly/pandas deps, ruff + mypy config, pytest settings with slow/gpu markers.",
+      "tags": ["config", "build", "dependencies"],
+      "complexity": "simple"
+    },
+    {
+      "id": "pipeline:.github/workflows/ci.yml",
+      "type": "pipeline",
+      "name": "ci.yml",
+      "filePath": ".github/workflows/ci.yml",
+      "summary": "GitHub Actions CI: runs pytest suite on push/PR. Badge shown in README.",
+      "tags": ["ci", "github-actions", "testing"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:scripts/download_data.py",
+      "type": "file",
+      "name": "download_data.py",
+      "filePath": "scripts/download_data.py",
+      "summary": "Downloads TinyStoriesV2-GPT4 train/valid txt files (~2 GB). Skips if already present.",
+      "tags": ["script", "data", "tinystories"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:scripts/tokenize_corpus.py",
+      "type": "file",
+      "name": "tokenize_corpus.py",
+      "filePath": "scripts/tokenize_corpus.py",
+      "summary": "Trains BPE tokenizer on TinyStories corpus and encodes train/valid splits to .npy token arrays.",
+      "tags": ["script", "tokenizer", "preprocessing"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:scripts/cloud_a100_sweep.py",
+      "type": "file",
+      "name": "cloud_a100_sweep.py",
+      "filePath": "scripts/cloud_a100_sweep.py",
+      "summary": "Paste-and-run benchmark sweep script for RunPod A100 cloud validation (Phase 8).",
+      "tags": ["script", "cloud", "a100", "benchmark"],
+      "complexity": "simple"
+    },
+    {
+      "id": "document:README.md",
+      "type": "document",
+      "name": "README.md",
+      "filePath": "README.md",
+      "summary": "Project overview: three stacked artifacts (LM, estimator, calibration study). Quickstart, architecture diagram, phase status, anchor test list, layout summary.",
+      "tags": ["docs", "readme", "overview"],
+      "complexity": "simple"
+    },
+    {
+      "id": "document:reports/technical_note.md",
+      "type": "document",
+      "name": "technical_note.md",
+      "filePath": "reports/technical_note.md",
+      "summary": "Full calibration study writeup: where the JAX Scaling Book estimator breaks (65–154% error), four proposed fixes, two implemented, results showing MAE drop from 64% to 29%.",
+      "tags": ["docs", "research", "calibration", "report"],
+      "complexity": "moderate"
+    },
+    {
+      "id": "document:reports/blog_drafts/01-when-the-estimator-breaks.md",
+      "type": "document",
+      "name": "01-when-the-estimator-breaks.md",
+      "filePath": "reports/blog_drafts/01-when-the-estimator-breaks.md",
+      "summary": "Narrative blog post version of the calibration study — shorter, story-driven.",
+      "tags": ["docs", "blog", "estimator"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:tests/test_model.py",
+      "type": "file",
+      "name": "test_model.py",
+      "filePath": "tests/test_model.py",
+      "summary": "Tests for TransformerLM: output shape, causal masking, RMSNorm, SwiGLU, RoPE correctness.",
+      "tags": ["test", "model"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:tests/test_estimator_anchors.py",
+      "type": "file",
+      "name": "test_estimator_anchors.py",
+      "filePath": "tests/test_estimator_anchors.py",
+      "summary": "8 anchor tests from JAX Scaling Book worked examples: 16B param check, attention fraction, 512KiB KV cache, 6.3e24 FLOPs, decode latency, Llama-3-70B shape, train_time_estimate, roofline threshold.",
+      "tags": ["test", "estimator", "anchors"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:tests/test_estimator_v2.py",
+      "type": "file",
+      "name": "test_estimator_v2.py",
+      "filePath": "tests/test_estimator_v2.py",
+      "summary": "Tests for the v2 roofline-gated tokens/s predictor: memory-bound vs compute-bound switching, overhead floor capping.",
+      "tags": ["test", "estimator", "roofline"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:tests/test_train.py",
+      "type": "file",
+      "name": "test_train.py",
+      "filePath": "tests/test_train.py",
+      "summary": "Training loop tests: AdamW step, cosine schedule shape, gradient clipping, checkpoint round-trip.",
+      "tags": ["test", "training"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:tests/test_tokenizer.py",
+      "type": "file",
+      "name": "test_tokenizer.py",
+      "filePath": "tests/test_tokenizer.py",
+      "summary": "Tokenizer tests: BPE train, encode/decode round-trip, special tokens, file save/load.",
+      "tags": ["test", "tokenizer"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:tests/test_profile.py",
+      "type": "file",
+      "name": "test_profile.py",
+      "filePath": "tests/test_profile.py",
+      "summary": "Tests for profile_train harness: profile_one output schema, sweep grid dimensions.",
+      "tags": ["test", "profiling"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:tests/test_smoke.py",
+      "type": "file",
+      "name": "test_smoke.py",
+      "filePath": "tests/test_smoke.py",
+      "summary": "End-to-end smoke test: builds tiny model, runs a few train steps, checks loss decreases.",
+      "tags": ["test", "smoke", "e2e"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:tests/test_app.py",
+      "type": "file",
+      "name": "test_app.py",
+      "filePath": "tests/test_app.py",
+      "summary": "Streamlit app import/unit tests: plotting helpers, chart DataFrame schemas.",
+      "tags": ["test", "app", "plotting"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:tests/adapters.py",
+      "type": "file",
+      "name": "adapters.py",
+      "filePath": "tests/adapters.py",
+      "summary": "CS336 A1 official adapter signatures so the CS336 pytest suite can be dropped in to verify against the course reference implementation.",
+      "tags": ["test", "adapter", "cs336"],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:src/lfslab/model.py:TransformerLM",
+      "type": "class",
+      "name": "TransformerLM",
+      "filePath": "src/lfslab/model.py",
+      "summary": "Top-level decoder-only LM. Embeds tokens, runs N TransformerBlocks with RoPE, applies final RMSNorm, projects to vocab logits. Supports optional tied embeddings.",
+      "tags": ["model", "class", "transformer"],
+      "complexity": "complex"
+    },
+    {
+      "id": "class:src/lfslab/model.py:TransformerBlock",
+      "type": "class",
+      "name": "TransformerBlock",
+      "filePath": "src/lfslab/model.py",
+      "summary": "Single transformer layer: pre-norm RMSNorm → CausalMHA with RoPE → residual; pre-norm RMSNorm → SwiGLU FFN → residual.",
+      "tags": ["model", "class", "block"],
+      "complexity": "moderate"
+    },
+    {
+      "id": "class:src/lfslab/model.py:CausalMultiHeadAttention",
+      "type": "class",
+      "name": "CausalMultiHeadAttention",
+      "filePath": "src/lfslab/model.py",
+      "summary": "Causal MHA with Q/K/V/O projections and optional RoPE. Builds causal mask via torch.tril. GQA-capable via separate n_kv_heads in estimator.",
+      "tags": ["model", "attention", "class"],
+      "complexity": "complex"
+    },
+    {
+      "id": "class:src/lfslab/estimator.py:ModelSpec",
+      "type": "class",
+      "name": "ModelSpec",
+      "filePath": "src/lfslab/estimator.py",
+      "summary": "Frozen dataclass: d_model, d_ff, n_layers, n_heads, n_kv_heads, head_dim, vocab_size, tied_embeddings. Input to all estimator functions.",
+      "tags": ["estimator", "dataclass", "spec"],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:src/lfslab/estimator.py:HardwareSpec",
+      "type": "class",
+      "name": "HardwareSpec",
+      "filePath": "src/lfslab/estimator.py",
+      "summary": "Frozen dataclass: device name, peak FLOPs/s, memory bandwidth, device memory, MFU. Used by roofline and train_time_estimate.",
+      "tags": ["estimator", "hardware", "dataclass"],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:src/lfslab/tokenizer.py:Tokenizer",
+      "type": "class",
+      "name": "Tokenizer",
+      "filePath": "src/lfslab/tokenizer.py",
+      "summary": "BPE tokenizer with encode/decode, special token handling, save/load (vocab.json + merges.txt + special_tokens.json). Merge rank dict for O(1) lookup per merge step.",
+      "tags": ["tokenizer", "class", "bpe"],
+      "complexity": "complex"
+    },
+    {
+      "id": "class:src/lfslab/train.py:AdamW",
+      "type": "class",
+      "name": "AdamW",
+      "filePath": "src/lfslab/train.py",
+      "summary": "Custom AdamW (Loshchilov & Hutter decoupled weight decay). Extends torch.optim.Optimizer; step() applies bias-corrected m/v update then decoupled WD.",
+      "tags": ["optimizer", "class", "training"],
+      "complexity": "moderate"
+    }
+  ],
+  "edges": [
+    { "source": "file:src/lfslab/train.py", "target": "file:src/lfslab/model.py", "type": "imports", "weight": 0.9, "label": "TransformerLM, softmax" },
+    { "source": "file:src/lfslab/train.py", "target": "file:src/lfslab/data.py", "type": "imports", "weight": 0.7, "label": "load_token_stream" },
+    { "source": "file:src/lfslab/train.py", "target": "file:src/lfslab/hardware.py", "type": "imports", "weight": 0.7, "label": "pick_device" },
+    { "source": "file:src/lfslab/generate.py", "target": "file:src/lfslab/model.py", "type": "imports", "weight": 0.8, "label": "softmax" },
+    { "source": "file:src/lfslab/kv_cache_toy.py", "target": "file:src/lfslab/model.py", "type": "imports", "weight": 0.9, "label": "TransformerBlock, TransformerLM, apply_rope, scaled_dot_product_attention" },
+    { "source": "file:src/lfslab/profile_train.py", "target": "file:src/lfslab/model.py", "type": "imports", "weight": 0.8, "label": "TransformerLM" },
+    { "source": "file:src/lfslab/profile_train.py", "target": "file:src/lfslab/hardware.py", "type": "imports", "weight": 0.6, "label": "pick_device" },
+    { "source": "file:src/lfslab/profile_train.py", "target": "file:src/lfslab/train.py", "type": "imports", "weight": 0.7, "label": "build_model_from_config" },
+    { "source": "file:src/lfslab/plotting.py", "target": "file:src/lfslab/estimator.py", "type": "imports", "weight": 0.9, "label": "ModelSpec, HardwareSpec, param_count, kv_cache_bytes_per_sequence, ..." },
+    { "source": "file:src/lfslab/hardware.py", "target": "file:src/lfslab/estimator.py", "type": "imports", "weight": 0.7, "label": "HardwareSpec" },
+    { "source": "file:app/streamlit_app.py", "target": "file:src/lfslab/estimator.py", "type": "imports", "weight": 0.9, "label": "ModelSpec, RuntimeSpec, HardwareSpec, all formulas" },
+    { "source": "file:app/streamlit_app.py", "target": "file:src/lfslab/hardware.py", "type": "imports", "weight": 0.7, "label": "CATALOGUE" },
+    { "source": "file:app/streamlit_app.py", "target": "file:src/lfslab/plotting.py", "type": "imports", "weight": 0.9, "label": "all chart helpers" },
+    { "source": "file:app/streamlit_app.py", "target": "file:src/lfslab/__init__.py", "type": "imports", "weight": 0.5, "label": "__version__" },
+    { "source": "file:src/lfslab/model.py", "target": "class:src/lfslab/model.py:TransformerLM", "type": "contains", "weight": 1.0 },
+    { "source": "file:src/lfslab/model.py", "target": "class:src/lfslab/model.py:TransformerBlock", "type": "contains", "weight": 1.0 },
+    { "source": "file:src/lfslab/model.py", "target": "class:src/lfslab/model.py:CausalMultiHeadAttention", "type": "contains", "weight": 1.0 },
+    { "source": "file:src/lfslab/estimator.py", "target": "class:src/lfslab/estimator.py:ModelSpec", "type": "contains", "weight": 1.0 },
+    { "source": "file:src/lfslab/estimator.py", "target": "class:src/lfslab/estimator.py:HardwareSpec", "type": "contains", "weight": 1.0 },
+    { "source": "file:src/lfslab/tokenizer.py", "target": "class:src/lfslab/tokenizer.py:Tokenizer", "type": "contains", "weight": 1.0 },
+    { "source": "file:src/lfslab/train.py", "target": "class:src/lfslab/train.py:AdamW", "type": "contains", "weight": 1.0 },
+    { "source": "class:src/lfslab/model.py:TransformerLM", "target": "class:src/lfslab/model.py:TransformerBlock", "type": "contains", "weight": 1.0 },
+    { "source": "class:src/lfslab/model.py:TransformerBlock", "target": "class:src/lfslab/model.py:CausalMultiHeadAttention", "type": "contains", "weight": 0.9 },
+    { "source": "file:scripts/tokenize_corpus.py", "target": "file:src/lfslab/tokenizer.py", "type": "imports", "weight": 0.7, "label": "Tokenizer, train_bpe" },
+    { "source": "file:scripts/tokenize_corpus.py", "target": "file:src/lfslab/data.py", "type": "imports", "weight": 0.6, "label": "save_token_stream" },
+    { "source": "file:scripts/cloud_a100_sweep.py", "target": "file:src/lfslab/profile_train.py", "type": "imports", "weight": 0.7, "label": "sweep" },
+    { "source": "config:configs/tiny_cpu.yaml", "target": "file:src/lfslab/train.py", "type": "configures", "weight": 0.6 },
+    { "source": "config:configs/tiny_mps.yaml", "target": "file:src/lfslab/train.py", "type": "configures", "weight": 0.6 },
+    { "source": "config:configs/estimator_defaults.yaml", "target": "file:src/lfslab/estimator.py", "type": "configures", "weight": 0.5 },
+    { "source": "pipeline:.github/workflows/ci.yml", "target": "file:tests/test_model.py", "type": "triggers", "weight": 0.5 },
+    { "source": "pipeline:.github/workflows/ci.yml", "target": "file:tests/test_estimator_anchors.py", "type": "triggers", "weight": 0.5 },
+    { "source": "pipeline:.github/workflows/ci.yml", "target": "file:tests/test_train.py", "type": "triggers", "weight": 0.5 },
+    { "source": "document:README.md", "target": "file:src/lfslab/model.py", "type": "documents", "weight": 0.5 },
+    { "source": "document:README.md", "target": "file:src/lfslab/estimator.py", "type": "documents", "weight": 0.5 },
+    { "source": "document:README.md", "target": "file:app/streamlit_app.py", "type": "documents", "weight": 0.5 },
+    { "source": "document:reports/technical_note.md", "target": "file:src/lfslab/estimator.py", "type": "documents", "weight": 0.7, "label": "calibration study" },
+    { "source": "document:reports/blog_drafts/01-when-the-estimator-breaks.md", "target": "file:src/lfslab/estimator.py", "type": "documents", "weight": 0.5 },
+    { "source": "file:tests/test_model.py", "target": "file:src/lfslab/model.py", "type": "tested_by", "weight": 0.5 },
+    { "source": "file:tests/test_estimator_anchors.py", "target": "file:src/lfslab/estimator.py", "type": "tested_by", "weight": 0.5 },
+    { "source": "file:tests/test_estimator_v2.py", "target": "file:src/lfslab/estimator.py", "type": "tested_by", "weight": 0.5 },
+    { "source": "file:tests/test_train.py", "target": "file:src/lfslab/train.py", "type": "tested_by", "weight": 0.5 },
+    { "source": "file:tests/test_tokenizer.py", "target": "file:src/lfslab/tokenizer.py", "type": "tested_by", "weight": 0.5 },
+    { "source": "file:tests/test_profile.py", "target": "file:src/lfslab/profile_train.py", "type": "tested_by", "weight": 0.5 },
+    { "source": "file:tests/test_smoke.py", "target": "file:src/lfslab/train.py", "type": "tested_by", "weight": 0.5 },
+    { "source": "file:tests/test_app.py", "target": "file:app/streamlit_app.py", "type": "tested_by", "weight": 0.5 },
+    { "source": "file:tests/adapters.py", "target": "file:src/lfslab/model.py", "type": "related", "weight": 0.4, "label": "CS336 A1 adapter" },
+    { "source": "file:tests/adapters.py", "target": "file:src/lfslab/tokenizer.py", "type": "related", "weight": 0.4 },
+    { "source": "config:pyproject.toml", "target": "file:src/lfslab/__init__.py", "type": "configures", "weight": 0.6 }
+  ],
+  "layers": [
+    {
+      "id": "layer:ui",
+      "name": "UI / Explorer",
+      "description": "Interactive Streamlit dashboard for the scaling estimator",
+      "nodeIds": ["file:app/streamlit_app.py"]
+    },
+    {
+      "id": "layer:core-ml",
+      "name": "Core ML",
+      "description": "Transformer model, training loop, generation, KV-cache",
+      "nodeIds": [
+        "file:src/lfslab/model.py",
+        "file:src/lfslab/train.py",
+        "file:src/lfslab/generate.py",
+        "file:src/lfslab/kv_cache_toy.py",
+        "class:src/lfslab/model.py:TransformerLM",
+        "class:src/lfslab/model.py:TransformerBlock",
+        "class:src/lfslab/model.py:CausalMultiHeadAttention",
+        "class:src/lfslab/train.py:AdamW"
+      ]
+    },
+    {
+      "id": "layer:data",
+      "name": "Data & Tokenization",
+      "description": "BPE tokenizer, dataset helpers, token stream I/O",
+      "nodeIds": [
+        "file:src/lfslab/tokenizer.py",
+        "file:src/lfslab/data.py",
+        "class:src/lfslab/tokenizer.py:Tokenizer"
+      ]
+    },
+    {
+      "id": "layer:estimator",
+      "name": "Estimator / Analytics",
+      "description": "Closed-form scaling estimator, hardware catalogue, chart helpers, profiling harness",
+      "nodeIds": [
+        "file:src/lfslab/estimator.py",
+        "file:src/lfslab/hardware.py",
+        "file:src/lfslab/plotting.py",
+        "file:src/lfslab/profile_train.py",
+        "class:src/lfslab/estimator.py:ModelSpec",
+        "class:src/lfslab/estimator.py:HardwareSpec"
+      ]
+    },
+    {
+      "id": "layer:package",
+      "name": "Package",
+      "description": "Package init and build configuration",
+      "nodeIds": [
+        "file:src/lfslab/__init__.py",
+        "config:pyproject.toml"
+      ]
+    },
+    {
+      "id": "layer:config",
+      "name": "Config",
+      "description": "Training and estimator YAML configs",
+      "nodeIds": [
+        "config:configs/tiny_cpu.yaml",
+        "config:configs/tiny_mps.yaml",
+        "config:configs/estimator_defaults.yaml"
+      ]
+    },
+    {
+      "id": "layer:scripts",
+      "name": "Scripts",
+      "description": "Data download, tokenization, and cloud benchmark scripts",
+      "nodeIds": [
+        "file:scripts/download_data.py",
+        "file:scripts/tokenize_corpus.py",
+        "file:scripts/cloud_a100_sweep.py"
+      ]
+    },
+    {
+      "id": "layer:tests",
+      "name": "Tests",
+      "description": "68-test suite covering model, training, estimator, profiling, tokenizer, app",
+      "nodeIds": [
+        "file:tests/test_model.py",
+        "file:tests/test_estimator_anchors.py",
+        "file:tests/test_estimator_v2.py",
+        "file:tests/test_train.py",
+        "file:tests/test_tokenizer.py",
+        "file:tests/test_profile.py",
+        "file:tests/test_smoke.py",
+        "file:tests/test_app.py",
+        "file:tests/adapters.py"
+      ]
+    },
+    {
+      "id": "layer:docs",
+      "name": "Docs / Reports",
+      "description": "README, calibration study technical note, blog drafts",
+      "nodeIds": [
+        "document:README.md",
+        "document:reports/technical_note.md",
+        "document:reports/blog_drafts/01-when-the-estimator-breaks.md"
+      ]
+    },
+    {
+      "id": "layer:ci",
+      "name": "CI / CD",
+      "description": "GitHub Actions workflow",
+      "nodeIds": [
+        "pipeline:.github/workflows/ci.yml"
+      ]
+    }
+  ],
+  "tour": [
+    {
+      "order": 1,
+      "title": "Project Overview",
+      "description": "Start with the README: three stacked artifacts — working LM, closed-form estimator, calibration study showing the JAX Scaling Book formula is off by 65–154%.",
+      "nodeIds": ["document:README.md"]
+    },
+    {
+      "order": 2,
+      "title": "The Model Core",
+      "description": "model.py is the architectural heart: RMSNorm + SwiGLU + RoPE + causal MHA in a pre-norm decoder-only stack. TransformerLM wraps N TransformerBlocks.",
+      "nodeIds": ["file:src/lfslab/model.py", "class:src/lfslab/model.py:TransformerLM", "class:src/lfslab/model.py:TransformerBlock", "class:src/lfslab/model.py:CausalMultiHeadAttention"]
+    },
+    {
+      "order": 3,
+      "title": "Tokenization Pipeline",
+      "description": "tokenizer.py implements byte-level BPE from scratch with GPT-2 pretokenization. tokenize_corpus.py trains it on TinyStories and saves token arrays.",
+      "nodeIds": ["file:src/lfslab/tokenizer.py", "class:src/lfslab/tokenizer.py:Tokenizer", "file:scripts/tokenize_corpus.py", "file:src/lfslab/data.py"]
+    },
+    {
+      "order": 4,
+      "title": "Training Loop",
+      "description": "train.py drives the full training: custom AdamW, cosine schedule with warmup, gradient clipping, checkpoint save/load. Loss drops 245→2.87 in ~13 minutes on Apple silicon.",
+      "nodeIds": ["file:src/lfslab/train.py", "class:src/lfslab/train.py:AdamW", "config:configs/tiny_mps.yaml", "config:configs/tiny_cpu.yaml"]
+    },
+    {
+      "order": 5,
+      "title": "Scaling Estimator (Simulated side)",
+      "description": "estimator.py computes parameters, FLOPs, activation memory, KV cache, decode latency, and train time entirely in pure Python using closed-form formulas from the JAX Scaling Book.",
+      "nodeIds": ["file:src/lfslab/estimator.py", "class:src/lfslab/estimator.py:ModelSpec", "class:src/lfslab/estimator.py:HardwareSpec", "file:src/lfslab/hardware.py"]
+    },
+    {
+      "order": 6,
+      "title": "Profiling Harness (Measured side)",
+      "description": "profile_train.py uses torch.profiler to time real forward passes across a seq_len × batch_size grid, writing sweep.json. This is the ground truth the estimator is calibrated against.",
+      "nodeIds": ["file:src/lfslab/profile_train.py", "file:scripts/cloud_a100_sweep.py"]
+    },
+    {
+      "order": 7,
+      "title": "Calibration Study",
+      "description": "technical_note.md documents exactly where the estimator breaks and why (4 proposed fixes, 2 implemented). Mean absolute error dropped from 64% to 29% after fixes.",
+      "nodeIds": ["document:reports/technical_note.md", "document:reports/blog_drafts/01-when-the-estimator-breaks.md"]
+    },
+    {
+      "order": 8,
+      "title": "Interactive Explorer",
+      "description": "streamlit_app.py ties everything together: sidebar controls ModelSpec/RuntimeSpec/HardwareSpec, 5 Plotly tabs show simulated curves and measured-vs-estimated scatter.",
+      "nodeIds": ["file:app/streamlit_app.py", "file:src/lfslab/plotting.py"]
+    },
+    {
+      "order": 9,
+      "title": "KV-Cache Demo",
+      "description": "kv_cache_toy.py demonstrates the principle of KV caching: naive O(T²) full-recompute baseline vs. O(1)-per-token decode_with_cache() that grows K/V tensors incrementally.",
+      "nodeIds": ["file:src/lfslab/kv_cache_toy.py"]
+    },
+    {
+      "order": 10,
+      "title": "Test Suite & CI",
+      "description": "68 tests cover all modules including 8 anchor tests against JAX Scaling Book worked examples. GitHub Actions CI runs on every push.",
+      "nodeIds": ["file:tests/test_estimator_anchors.py", "file:tests/test_model.py", "file:tests/test_smoke.py", "pipeline:.github/workflows/ci.yml"]
+    }
+  ]
+}

@@ -1,0 +1,1443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>llm-from-scratch-lab · Knowledge Graph</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --surface2: #21262d;
+    --border: #30363d; --text: #e6edf3; --text-muted: #8b949e; --accent: #58a6ff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+
+  /* ── Header ── */
+  header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 16px; height: 44px;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  header .hicon { width: 18px; height: 18px; flex-shrink: 0; }
+  header h1 { font-size: 14px; font-weight: 600; white-space: nowrap; }
+  header .sub { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+  .badge {
+    font-size: 11px; padding: 2px 8px; border-radius: 10px;
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted);
+    white-space: nowrap;
+  }
+  header .spacer { flex: 1; }
+
+  /* ── Layout ── */
+  .layout { display: flex; height: calc(100vh - 44px); overflow: hidden; }
+
+  /* ── Sidebar ── */
+  #sidebar {
+    width: 260px; min-width: 200px; flex-shrink: 0;
+    background: var(--surface); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .tabs { display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .tab {
+    flex: 1; padding: 8px 4px; text-align: center; font-size: 12px;
+    cursor: pointer; color: var(--text-muted);
+    border-bottom: 2px solid transparent; user-select: none;
+    transition: color .15s, border-color .15s;
+  }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-panel { display: none; flex: 1; overflow-y: auto; }
+  .tab-panel.active { display: flex; flex-direction: column; }
+
+  /* Legend */
+  .legend-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 12px; font-size: 12px; cursor: pointer;
+    transition: background .1s; user-select: none;
+  }
+  .legend-item:hover { background: var(--surface2); }
+  .legend-item.muted { opacity: .3; }
+  .leg-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .leg-count { margin-left: auto; font-size: 11px; color: var(--text-muted); }
+
+  /* Tour */
+  .tour-item {
+    padding: 8px 12px; cursor: pointer; border-left: 2px solid transparent;
+    transition: background .1s, border-color .1s;
+  }
+  .tour-item:hover { background: var(--surface2); }
+  .tour-item.active { background: var(--surface2); border-left-color: var(--accent); }
+  .tour-num { font-size: 10px; color: var(--text-muted); margin-bottom: 2px; }
+  .tour-title { font-size: 12px; font-weight: 600; }
+  .tour-desc { font-size: 11px; color: var(--text-muted); margin-top: 3px; line-height: 1.4; }
+
+  /* Controls */
+  .ctrl-block { padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; }
+  .ctrl-label { font-size: 11px; color: var(--text-muted); display: flex; flex-direction: column; gap: 4px; }
+  .ctrl-label input[type=range] { accent-color: var(--accent); }
+  .ctrl-label input[type=search] {
+    padding: 5px 8px; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); font-size: 12px; outline: none;
+  }
+  .ctrl-label input[type=search]:focus { border-color: var(--accent); }
+  .btn-row { display: flex; gap: 6px; }
+  .btn {
+    flex: 1; padding: 5px 6px; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text-muted); font-size: 11px;
+    cursor: pointer; text-align: center; user-select: none; transition: background .1s;
+  }
+  .btn:hover { background: var(--border); color: var(--text); }
+  .edge-legend { padding: 0 12px 10px; }
+  .edge-legend-title { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 6px; }
+  .edge-row { display: flex; align-items: center; gap: 8px; font-size: 11px; margin-bottom: 4px; }
+
+  /* ── Canvas ── */
+  #canvas { flex: 1; position: relative; overflow: hidden; background: var(--bg); }
+
+  /* ONLY target the graph SVG — NOT any inline SVG in the header */
+  #graph-svg { width: 100%; height: 100%; display: block; }
+
+  .glink { fill: none; stroke-opacity: .5; stroke-width: 1.2px; }
+  .glink.imports   { stroke: #58a6ff; }
+  .glink.contains  { stroke: #444; stroke-dasharray: 3 3; stroke-opacity: .3; }
+  .glink.tested_by { stroke: #56d364; stroke-dasharray: 5 3; }
+  .glink.configures{ stroke: #ffa657; stroke-opacity: .4; }
+  .glink.documents { stroke: #e3b341; stroke-opacity: .4; }
+  .glink.triggers  { stroke: #ff7b72; stroke-opacity: .4; }
+  .glink.related   { stroke: #666;  stroke-dasharray: 2 4; stroke-opacity: .25; }
+
+  .gnode { cursor: pointer; }
+  .gnode circle { stroke-width: 1.5px; transition: stroke-width .1s, filter .1s; }
+  .gnode:hover circle { stroke-width: 3px; filter: brightness(1.25); }
+  .gnode.dimmed { opacity: .12; }
+  .gnode.hi circle { stroke-width: 3px; filter: brightness(1.3); }
+  .gnode text { fill: var(--text); font-size: 10px; pointer-events: none; }
+  .glink.dimmed { opacity: .04; }
+
+  /* ── Info panel ── */
+  #info {
+    position: absolute; top: 10px; right: 10px; width: 280px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px; font-size: 12px;
+    box-shadow: 0 8px 24px #00000066; display: none; z-index: 20;
+  }
+  #info.show { display: block; }
+  #info-close { float: right; cursor: pointer; font-size: 16px; color: var(--text-muted); }
+  #info-close:hover { color: var(--text); }
+  .ip-type { font-size: 10px; text-transform: uppercase; letter-spacing: .7px; color: var(--text-muted); margin-bottom: 3px; }
+  .ip-name { font-size: 14px; font-weight: 700; margin-bottom: 4px; word-break: break-all; }
+  .ip-path { font-size: 10px; color: var(--text-muted); font-family: monospace; margin-bottom: 8px; }
+  .ip-summary { color: var(--text-muted); line-height: 1.5; margin-bottom: 8px; }
+  .ip-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+  .ip-tag { font-size: 10px; padding: 2px 7px; border-radius: 10px; background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted); }
+  .ip-edge-head { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; margin: 6px 0 3px; }
+  .ip-edge-item { font-size: 11px; color: var(--accent); cursor: pointer; padding: 1px 0; }
+  .ip-edge-item:hover { text-decoration: underline; }
+
+  /* ── Tooltip ── */
+  #tip {
+    position: absolute; pointer-events: none; z-index: 30;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 9px; font-size: 11px;
+    display: none; max-width: 200px;
+  }
+
+  /* ── Stats bar ── */
+  #stats {
+    position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 14px; padding: 5px 16px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 20px; font-size: 11px; color: var(--text-muted);
+    pointer-events: none; white-space: nowrap;
+  }
+  #stats b { color: var(--text); }
+
+  /* ── System view ── */
+  #system-view {
+    display: none; position: absolute; inset: 0;
+    overflow: auto; background: var(--bg);
+    z-index: 5;
+  }
+  #system-view.show { display: block; }
+  #system-svg { display: block; margin: 0 auto; }
+
+  /* system diagram shared styles */
+  .sd-section-bg { fill: #161b22; rx: 10; }
+  .sd-title { font: 600 11px system-ui; fill: #8b949e; letter-spacing: .6px; text-transform: uppercase; }
+  .sd-box { rx: 6; stroke-width: 1.5; }
+  .sd-label { font: 600 11.5px system-ui; }
+  .sd-sub   { font: 400 9.5px system-ui; fill: #8b949e; }
+  .sd-badge { font: 600 9px system-ui; }
+  .sd-arr   { fill: none; stroke-width: 1.5; marker-end: url(#sd-arr); }
+  .sd-arr-dashed { stroke-dasharray: 5 3; }
+  .sd-loop-box { fill: #0d1117; rx: 8; stroke: #30363d; stroke-width: 1; stroke-dasharray: 6 3; }
+  .sd-repeat { font: 700 9px system-ui; fill: #58a6ff; }
+
+  /* sidebar system legend */
+  #tab-system { padding: 12px; gap: 10px; }
+  .sys-legend-item { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; }
+  .sys-swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; margin-top: 2px; }
+  .sys-legend-name { font-size: 12px; font-weight: 600; }
+  .sys-legend-desc { font-size: 11px; color: var(--text-muted); line-height: 1.4; margin-top: 1px; }
+
+  /* ── Context view ── */
+  #context-view {
+    display: none; position: absolute; inset: 0;
+    overflow-y: auto; background: var(--bg); z-index: 5; padding: 32px 40px 60px;
+  }
+  #context-view.show { display: block; }
+  .cx-page { max-width: 860px; margin: 0 auto; }
+  .cx-hero { margin-bottom: 36px; }
+  .cx-hero h2 { font-size: 26px; font-weight: 700; margin-bottom: 8px; line-height: 1.2; }
+  .cx-hero p  { font-size: 14px; color: var(--text-muted); line-height: 1.7; max-width: 700px; }
+  .cx-tag { display: inline-block; font-size: 11px; padding: 2px 9px; border-radius: 10px;
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted);
+    margin: 0 4px 4px 0; }
+  .cx-section { margin-bottom: 36px; }
+  .cx-section h3 { font-size: 13px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .8px; color: var(--text-muted); margin-bottom: 14px;
+    padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .cx-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px,1fr)); gap: 12px; }
+  .cx-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px; }
+  .cx-card-icon { font-size: 20px; margin-bottom: 6px; }
+  .cx-card h4 { font-size: 13px; font-weight: 700; margin-bottom: 5px; }
+  .cx-card p  { font-size: 12px; color: var(--text-muted); line-height: 1.55; }
+  .cx-card .cx-hl { color: var(--accent); font-weight: 600; }
+
+  /* Checklist */
+  .cx-checklist { display: flex; flex-direction: column; gap: 0; }
+  .cx-item { display: flex; align-items: flex-start; gap: 12px;
+    padding: 11px 14px; border-radius: 8px; transition: background .1s; }
+  .cx-item:hover { background: var(--surface); }
+  .cx-item .ck { width: 18px; height: 18px; border-radius: 5px; flex-shrink: 0; margin-top: 1px;
+    display: flex; align-items: center; justify-content: center; font-size: 11px; }
+  .cx-item .ck.done { background: #238636; border: 1px solid #3fb950; color: #fff; }
+  .cx-item .ck.todo { background: var(--surface2); border: 1px solid var(--border); color: transparent; }
+  .cx-item .ck.wip  { background: #9e5000; border: 1px solid #ffa657; color: #fff; }
+  .cx-item-body { flex: 1; }
+  .cx-item-title { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+  .cx-item-title.done { color: var(--text); }
+  .cx-item-title.todo { color: var(--text-muted); }
+  .cx-item-desc { font-size: 11.5px; color: var(--text-muted); line-height: 1.5; }
+  .cx-item-tag { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 6px;
+    margin-left: 6px; background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted); }
+  .cx-item-phase { font-size: 10px; color: #8b949e; width: 56px; flex-shrink: 0; padding-top: 2px; font-family: monospace; }
+
+  /* Findings */
+  .cx-finding { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+    border-radius: 8px; padding: 14px; margin-bottom: 10px; }
+  .cx-finding h4 { font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+  .cx-finding p  { font-size: 12px; color: var(--text-muted); line-height: 1.55; }
+  .cx-num { font-size: 22px; font-weight: 800; margin-bottom: 2px; }
+
+  /* sidebar context nav */
+  #tab-context { padding: 0; }
+  .cx-nav-item { padding: 8px 14px; font-size: 12px; cursor: pointer; color: var(--text-muted);
+    border-left: 2px solid transparent; transition: all .1s; }
+  .cx-nav-item:hover { background: var(--surface2); color: var(--text); border-left-color: var(--accent); }
+  .cx-progress { padding: 12px 14px; border-top: 1px solid var(--border); margin-top: auto; }
+  .cx-prog-label { font-size: 10px; text-transform: uppercase; letter-spacing: .6px;
+    color: var(--text-muted); margin-bottom: 6px; }
+  .cx-prog-bar { height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; margin-bottom: 4px; }
+  .cx-prog-fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, #238636, #3fb950); }
+  .cx-prog-text { font-size: 11px; color: var(--text-muted); }
+
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<header>
+  <!-- Inline SVG icon — intentionally NOT styled by #graph-svg rule -->
+  <svg class="hicon" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" stroke-width="2" stroke-linecap="round">
+    <circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
+  </svg>
+  <h1>llm-from-scratch-lab</h1>
+  <span class="sub">Knowledge Graph</span>
+  <span class="badge">PyTorch · Streamlit · Python</span>
+  <div class="spacer"></div>
+  <span class="badge" id="hdr-counts">— nodes · — edges</span>
+</header>
+
+<div class="layout">
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <div class="tabs">
+      <div class="tab active" data-tab="layers">Layers</div>
+      <div class="tab" data-tab="tour">Tour</div>
+      <div class="tab" data-tab="system">System</div>
+      <div class="tab" data-tab="context">Context</div>
+      <div class="tab" data-tab="controls">Controls</div>
+    </div>
+    <div class="tab-panel active" id="tab-layers"></div>
+    <div class="tab-panel" id="tab-tour"></div>
+    <div class="tab-panel" id="tab-system">
+      <div style="padding:10px 12px 4px;font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.7px;font-weight:600">Architecture Legend</div>
+      <div class="sys-legend-item"><div class="sys-swatch" style="background:#3fb950"></div><div><div class="sys-legend-name">Data Pipeline</div><div class="sys-legend-desc">BPE tokenizer training, TinyStories corpus → .npy token arrays</div></div></div>
+      <div class="sys-legend-item"><div class="sys-swatch" style="background:#58a6ff"></div><div><div class="sys-legend-name">Transformer Model</div><div class="sys-legend-desc">TransformerLM: Embedding → N×Block (RMSNorm+MHA+SwiGLU) → lm_head</div></div></div>
+      <div class="sys-legend-item"><div class="sys-swatch" style="background:#79c0ff"></div><div><div class="sys-legend-name">Attention Block</div><div class="sys-legend-desc">CausalMHA with RoPE positional encoding, causal mask via tril</div></div></div>
+      <div class="sys-legend-item"><div class="sys-swatch" style="background:#d2a8ff"></div><div><div class="sys-legend-name">Training Loop</div><div class="sys-legend-desc">cross_entropy → backward → grad_clip → AdamW + cosine schedule</div></div></div>
+      <div class="sys-legend-item"><div class="sys-swatch" style="background:#56d364"></div><div><div class="sys-legend-name">Inference</div><div class="sys-legend-desc">generate() (top-k/temp) or decode_with_cache() (O(1)/token KV cache)</div></div></div>
+      <div class="sys-legend-item"><div class="sys-swatch" style="background:#ffa657"></div><div><div class="sys-legend-name">Estimator</div><div class="sys-legend-desc">Pure-Python closed-form formulas; profile_train.py for measured benchmarks</div></div></div>
+      <div class="sys-legend-item"><div class="sys-swatch" style="background:#f78166"></div><div><div class="sys-legend-name">Streamlit Explorer</div><div class="sys-legend-desc">5 Plotly tabs: simulated curves + measured-vs-estimated overlay</div></div></div>
+      <div style="margin:10px 12px 0;padding:10px;background:var(--surface2);border-radius:6px;font-size:11px;color:var(--text-muted);line-height:1.5">
+        <b style="color:var(--text)">Key finding:</b> The JAX Scaling Book estimator was off by <b style="color:#f78166">65–154%</b>. After two fixes, mean absolute error dropped from <b style="color:#ffa657">64% → 29%</b>.
+      </div>
+    </div>
+    <div class="tab-panel" id="tab-context">
+      <div class="cx-nav-item" onclick="document.getElementById('cx-why').scrollIntoView({behavior:'smooth'})">💡 Why this project</div>
+      <div class="cx-nav-item" onclick="document.getElementById('cx-what').scrollIntoView({behavior:'smooth'})">🔧 What it does</div>
+      <div class="cx-nav-item" onclick="document.getElementById('cx-how').scrollIntoView({behavior:'smooth'})">⚙️ How it works</div>
+      <div class="cx-nav-item" onclick="document.getElementById('cx-phases').scrollIntoView({behavior:'smooth'})">✅ Phase checklist</div>
+      <div class="cx-nav-item" onclick="document.getElementById('cx-findings').scrollIntoView({behavior:'smooth'})">📊 Key findings</div>
+      <div class="cx-progress">
+        <div class="cx-prog-label">Overall progress</div>
+        <div class="cx-prog-bar"><div class="cx-prog-fill" style="width:90%"></div></div>
+        <div class="cx-prog-text">9 / 10 phases complete &nbsp;·&nbsp; Phase 8 optional</div>
+      </div>
+    </div>
+    <div class="tab-panel" id="tab-controls">
+      <div class="ctrl-block">
+        <div class="ctrl-label">Search
+          <input type="search" id="search" placeholder="name or tag…" />
+        </div>
+        <div class="ctrl-label">Charge strength
+          <input type="range" id="r-charge" min="-600" max="-60" value="-250" />
+        </div>
+        <div class="ctrl-label">Label size
+          <input type="range" id="r-labels" min="7" max="14" value="10" />
+        </div>
+        <div class="btn-row">
+          <div class="btn" id="btn-reset">Reset view</div>
+          <div class="btn" id="btn-pause">Pause</div>
+        </div>
+        <div class="btn-row">
+          <div class="btn" id="btn-imports">Imports only</div>
+          <div class="btn" id="btn-all">All edges</div>
+        </div>
+      </div>
+      <div class="edge-legend">
+        <div class="edge-legend-title">Edge types</div>
+        <div class="edge-row"><svg width="24" height="6"><line x1="0" y1="3" x2="24" y2="3" stroke="#58a6ff" stroke-width="1.5"/></svg> imports</div>
+        <div class="edge-row"><svg width="24" height="6"><line x1="0" y1="3" x2="24" y2="3" stroke="#56d364" stroke-width="1.5" stroke-dasharray="5,3"/></svg> tested_by</div>
+        <div class="edge-row"><svg width="24" height="6"><line x1="0" y1="3" x2="24" y2="3" stroke="#ffa657" stroke-width="1.5"/></svg> configures</div>
+        <div class="edge-row"><svg width="24" height="6"><line x1="0" y1="3" x2="24" y2="3" stroke="#e3b341" stroke-width="1.5"/></svg> documents</div>
+        <div class="edge-row"><svg width="24" height="6"><line x1="0" y1="3" x2="24" y2="3" stroke="#ff7b72" stroke-width="1.5"/></svg> triggers</div>
+        <div class="edge-row"><svg width="24" height="6"><line x1="0" y1="3" x2="24" y2="3" stroke="#555" stroke-width="1.5" stroke-dasharray="3,3"/></svg> contains</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Canvas -->
+  <div id="canvas">
+
+    <!-- ── System Design View ── -->
+    <div id="system-view">
+      <svg id="system-svg" viewBox="0 0 1260 1010" width="1260" height="1010">
+        <defs>
+          <marker id="sd-arr" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+            <path d="M0,0 L0,7 L7,3.5z" fill="#555"/>
+          </marker>
+          <marker id="sd-arr-blue" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+            <path d="M0,0 L0,7 L7,3.5z" fill="#58a6ff"/>
+          </marker>
+          <marker id="sd-arr-green" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+            <path d="M0,0 L0,7 L7,3.5z" fill="#3fb950"/>
+          </marker>
+          <marker id="sd-arr-purple" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+            <path d="M0,0 L0,7 L7,3.5z" fill="#d2a8ff"/>
+          </marker>
+          <marker id="sd-arr-orange" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+            <path d="M0,0 L0,7 L7,3.5z" fill="#ffa657"/>
+          </marker>
+        </defs>
+
+        <!-- ════════════════════════════════════════════════════ -->
+        <!-- SECTION 1 · DATA PIPELINE                          -->
+        <!-- ════════════════════════════════════════════════════ -->
+        <rect x="20" y="16" width="830" height="90" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+        <text x="36" y="34" class="sd-title" fill="#3fb950">① Data Pipeline</text>
+
+        <!-- TinyStories txt -->
+        <rect x="36" y="42" width="130" height="48" rx="6" fill="#0d2b1a" stroke="#3fb950" stroke-width="1.5"/>
+        <text x="101" y="63" class="sd-label" fill="#3fb950" text-anchor="middle">TinyStories</text>
+        <text x="101" y="77" class="sd-sub" text-anchor="middle">.txt corpus (~2 GB)</text>
+
+        <!-- arrow -->
+        <line x1="166" y1="66" x2="190" y2="66" stroke="#3fb950" stroke-width="1.5" marker-end="url(#sd-arr-green)"/>
+
+        <!-- train_bpe -->
+        <rect x="192" y="42" width="118" height="48" rx="6" fill="#0d2b1a" stroke="#3fb950" stroke-width="1.5"/>
+        <text x="251" y="63" class="sd-label" fill="#3fb950" text-anchor="middle">train_bpe()</text>
+        <text x="251" y="77" class="sd-sub" text-anchor="middle">vocab + merges</text>
+
+        <!-- arrow -->
+        <line x1="310" y1="66" x2="334" y2="66" stroke="#3fb950" stroke-width="1.5" marker-end="url(#sd-arr-green)"/>
+
+        <!-- Tokenizer -->
+        <rect x="336" y="42" width="118" height="48" rx="6" fill="#0d2b1a" stroke="#3fb950" stroke-width="1.5"/>
+        <text x="395" y="63" class="sd-label" fill="#3fb950" text-anchor="middle">Tokenizer</text>
+        <text x="395" y="77" class="sd-sub" text-anchor="middle">BPE encode/decode</text>
+
+        <!-- arrow -->
+        <line x1="454" y1="66" x2="478" y2="66" stroke="#3fb950" stroke-width="1.5" marker-end="url(#sd-arr-green)"/>
+
+        <!-- .npy arrays -->
+        <rect x="480" y="42" width="118" height="48" rx="6" fill="#0d2b1a" stroke="#3fb950" stroke-width="1.5"/>
+        <text x="539" y="63" class="sd-label" fill="#3fb950" text-anchor="middle">.npy token arrays</text>
+        <text x="539" y="77" class="sd-sub" text-anchor="middle">mmap'd uint16/32</text>
+
+        <!-- arrow -->
+        <line x1="598" y1="66" x2="622" y2="66" stroke="#3fb950" stroke-width="1.5" marker-end="url(#sd-arr-green)"/>
+
+        <!-- get_batch -->
+        <rect x="624" y="42" width="118" height="48" rx="6" fill="#0d2b1a" stroke="#3fb950" stroke-width="1.5"/>
+        <text x="683" y="63" class="sd-label" fill="#3fb950" text-anchor="middle">get_batch()</text>
+        <text x="683" y="77" class="sd-sub" text-anchor="middle">random start, shift-1</text>
+
+        <!-- arrow to model -->
+        <line x1="742" y1="66" x2="766" y2="66" stroke="#3fb950" stroke-width="1.5" marker-end="url(#sd-arr-green)"/>
+
+        <!-- x, y tensors -->
+        <rect x="768" y="42" width="66" height="48" rx="6" fill="#0d2b1a" stroke="#3fb950" stroke-width="1.5"/>
+        <text x="801" y="63" class="sd-label" fill="#3fb950" text-anchor="middle">(x, y)</text>
+        <text x="801" y="77" class="sd-sub" text-anchor="middle">B × T</text>
+
+        <!-- down arrow from (x,y) into model -->
+        <line x1="801" y1="90" x2="801" y2="134" stroke="#3fb950" stroke-width="1.5" marker-end="url(#sd-arr-green)"/>
+
+        <!-- ════════════════════════════════════════════════════ -->
+        <!-- SECTION 2 · TRANSFORMER MODEL                      -->
+        <!-- ════════════════════════════════════════════════════ -->
+        <rect x="20" y="118" width="560" height="640" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+        <text x="36" y="138" class="sd-title" fill="#58a6ff">② TransformerLM  (model.py)</text>
+
+        <!-- Token IDs -->
+        <rect x="160" y="148" width="230" height="44" rx="6" fill="#0a1628" stroke="#58a6ff" stroke-width="1.5"/>
+        <text x="275" y="168" class="sd-label" fill="#58a6ff" text-anchor="middle">Token IDs  (B, T)</text>
+        <text x="275" y="184" class="sd-sub" text-anchor="middle">integer token indices from tokenizer</text>
+        <line x1="275" y1="192" x2="275" y2="212" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#sd-arr-blue)"/>
+
+        <!-- Embedding -->
+        <rect x="160" y="214" width="230" height="44" rx="6" fill="#0a1628" stroke="#58a6ff" stroke-width="1.5"/>
+        <text x="275" y="234" class="sd-label" fill="#58a6ff" text-anchor="middle">Embedding</text>
+        <text x="275" y="250" class="sd-sub" text-anchor="middle">vocab_size × d_model  →  (B, T, D)</text>
+        <line x1="275" y1="258" x2="275" y2="278" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#sd-arr-blue)"/>
+
+        <!-- TransformerBlock × N container -->
+        <rect x="48" y="280" width="514" height="366" rx="8" fill="#0d1117" stroke="#58a6ff" stroke-width="1" stroke-dasharray="6 3"/>
+        <text x="275" y="300" class="sd-repeat" text-anchor="middle">TransformerBlock  ×  N layers</text>
+
+        <!-- ── Residual stream label left ── -->
+        <text x="66" y="392" class="sd-sub" fill="#8b949e" writing-mode="tb">residual stream x</text>
+
+        <!-- PRE-NORM 1 -->
+        <rect x="170" y="308" width="210" height="38" rx="5" fill="#1a1040" stroke="#79c0ff" stroke-width="1.5"/>
+        <text x="275" y="325" class="sd-label" fill="#79c0ff" text-anchor="middle">RMSNorm</text>
+        <text x="275" y="339" class="sd-sub" text-anchor="middle">pre-norm, no bias</text>
+        <line x1="275" y1="346" x2="275" y2="363" stroke="#79c0ff" stroke-width="1.5" marker-end="url(#sd-arr-blue)"/>
+
+        <!-- CAUSAL MHA -->
+        <rect x="108" y="365" width="334" height="52" rx="5" fill="#1a1040" stroke="#79c0ff" stroke-width="1.5"/>
+        <text x="275" y="385" class="sd-label" fill="#79c0ff" text-anchor="middle">CausalMultiHeadAttention</text>
+        <text x="275" y="401" class="sd-sub" text-anchor="middle">Q,K,V,O projections  ·  RoPE  ·  causal mask (tril)  ·  SDPA</text>
+
+        <!-- RoPE badge -->
+        <rect x="434" y="371" width="50" height="22" rx="4" fill="#0a1628" stroke="#79c0ff" stroke-width="1"/>
+        <text x="459" y="386" class="sd-badge" fill="#79c0ff" text-anchor="middle">RoPE</text>
+
+        <!-- residual add 1 -->
+        <text x="90" y="432" class="sd-sub" fill="#8b949e" text-anchor="middle">+ x</text>
+        <line x1="275" y1="417" x2="275" y2="434" stroke="#79c0ff" stroke-width="1.5"/>
+        <line x1="90" y1="340" x2="90" y2="444" stroke="#30363d" stroke-width="1" stroke-dasharray="3 2"/>
+        <line x1="90" y1="444" x2="240" y2="444" stroke="#30363d" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#sd-arr)"/>
+        <circle cx="275" cy="444" r="7" fill="#0d1117" stroke="#30363d" stroke-width="1.2"/>
+        <text x="275" y="448" class="sd-badge" fill="#8b949e" text-anchor="middle">+</text>
+        <line x1="275" y1="451" x2="275" y2="468" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#sd-arr-blue)"/>
+
+        <!-- PRE-NORM 2 -->
+        <rect x="170" y="470" width="210" height="38" rx="5" fill="#1a1040" stroke="#79c0ff" stroke-width="1.5"/>
+        <text x="275" y="487" class="sd-label" fill="#79c0ff" text-anchor="middle">RMSNorm</text>
+        <text x="275" y="501" class="sd-sub" text-anchor="middle">pre-norm before FFN</text>
+        <line x1="275" y1="508" x2="275" y2="525" stroke="#79c0ff" stroke-width="1.5" marker-end="url(#sd-arr-blue)"/>
+
+        <!-- SwiGLU FFN -->
+        <rect x="118" y="527" width="314" height="52" rx="5" fill="#1a1040" stroke="#79c0ff" stroke-width="1.5"/>
+        <text x="275" y="547" class="sd-label" fill="#79c0ff" text-anchor="middle">SwiGLU FFN</text>
+        <text x="275" y="563" class="sd-sub" text-anchor="middle">w2( silu(x·w1ᵀ) ⊙ (x·w3ᵀ) )  ·  d_ff = 4×d_model</text>
+
+        <!-- residual add 2 -->
+        <text x="90" y="600" class="sd-sub" fill="#8b949e" text-anchor="middle">+ x</text>
+        <line x1="275" y1="579" x2="275" y2="596" stroke="#79c0ff" stroke-width="1.5"/>
+        <line x1="90" y1="452" x2="90" y2="608" stroke="#30363d" stroke-width="1" stroke-dasharray="3 2"/>
+        <line x1="90" y1="608" x2="240" y2="608" stroke="#30363d" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#sd-arr)"/>
+        <circle cx="275" cy="608" r="7" fill="#0d1117" stroke="#30363d" stroke-width="1.2"/>
+        <text x="275" y="612" class="sd-badge" fill="#8b949e" text-anchor="middle">+</text>
+        <line x1="275" y1="615" x2="275" y2="634" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#sd-arr-blue)"/>
+
+        <!-- end of block -->
+        <text x="440" y="640" class="sd-sub" fill="#58a6ff" text-anchor="middle">↺ repeat N times</text>
+
+        <!-- RMSNorm final -->
+        <line x1="275" y1="646" x2="275" y2="666" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#sd-arr-blue)"/>
+        <rect x="160" y="668" width="230" height="40" rx="6" fill="#0a1628" stroke="#58a6ff" stroke-width="1.5"/>
+        <text x="275" y="686" class="sd-label" fill="#58a6ff" text-anchor="middle">RMSNorm  (final)</text>
+        <text x="275" y="700" class="sd-sub" text-anchor="middle">output normalisation</text>
+        <line x1="275" y1="708" x2="275" y2="726" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#sd-arr-blue)"/>
+
+        <!-- lm_head -->
+        <rect x="160" y="728" width="230" height="40" rx="6" fill="#0a1628" stroke="#58a6ff" stroke-width="1.5"/>
+        <text x="275" y="746" class="sd-label" fill="#58a6ff" text-anchor="middle">lm_head  (Linear, no bias)</text>
+        <text x="275" y="760" class="sd-sub" text-anchor="middle">d_model → vocab_size</text>
+        <line x1="275" y1="768" x2="275" y2="790" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#sd-arr-blue)"/>
+
+        <!-- Logits -->
+        <rect x="175" y="792" width="200" height="40" rx="6" fill="#0a1628" stroke="#a5f3fc" stroke-width="1.5"/>
+        <text x="275" y="810" class="sd-label" fill="#a5f3fc" text-anchor="middle">Logits  (B, T, V)</text>
+        <text x="275" y="826" class="sd-sub" text-anchor="middle">raw unnormalized scores</text>
+
+        <!-- tied embedding note -->
+        <text x="430" y="780" class="sd-sub" text-anchor="start" fill="#8b949e">optional: tied</text>
+        <text x="430" y="792" class="sd-sub" text-anchor="start" fill="#8b949e">to embedding</text>
+
+        <!-- ════════════════════════════════════════════════════ -->
+        <!-- SECTION 3 · TRAINING LOOP                          -->
+        <!-- ════════════════════════════════════════════════════ -->
+        <rect x="20" y="772" width="560" height="222" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+        <text x="36" y="792" class="sd-title" fill="#d2a8ff">③ Training Loop  (train.py)</text>
+
+        <!-- from logits down arrow -->
+        <!-- already drawn: logits box ends at y=832, section starts at y=772 -->
+        <!-- we start the training row below logits -->
+
+        <!-- cross_entropy -->
+        <line x1="275" y1="832" x2="275" y2="856" stroke="#d2a8ff" stroke-width="1.5" marker-end="url(#sd-arr-purple)"/>
+        <rect x="44" y="858" width="150" height="42" rx="6" fill="#1a0a2e" stroke="#d2a8ff" stroke-width="1.5"/>
+        <text x="119" y="876" class="sd-label" fill="#d2a8ff" text-anchor="middle">cross_entropy</text>
+        <text x="119" y="890" class="sd-sub" text-anchor="middle">log-sum-exp stable</text>
+        <!-- arrow from logits centre-bottom to cross_entropy -->
+        <line x1="275" y1="856" x2="195" y2="856" stroke="#d2a8ff" stroke-width="1.5"/>
+        <line x1="119" y1="856" x2="119" y2="858" stroke="#d2a8ff" stroke-width="1.5" marker-end="url(#sd-arr-purple)"/>
+
+        <!-- loss.backward -->
+        <line x1="194" y1="879" x2="218" y2="879" stroke="#d2a8ff" stroke-width="1.5" marker-end="url(#sd-arr-purple)"/>
+        <rect x="220" y="858" width="130" height="42" rx="6" fill="#1a0a2e" stroke="#d2a8ff" stroke-width="1.5"/>
+        <text x="285" y="876" class="sd-label" fill="#d2a8ff" text-anchor="middle">loss.backward()</text>
+        <text x="285" y="890" class="sd-sub" text-anchor="middle">auto-grad</text>
+
+        <!-- grad_clipping -->
+        <line x1="350" y1="879" x2="374" y2="879" stroke="#d2a8ff" stroke-width="1.5" marker-end="url(#sd-arr-purple)"/>
+        <rect x="376" y="858" width="130" height="42" rx="6" fill="#1a0a2e" stroke="#d2a8ff" stroke-width="1.5"/>
+        <text x="441" y="876" class="sd-label" fill="#d2a8ff" text-anchor="middle">grad_clipping()</text>
+        <text x="441" y="890" class="sd-sub" text-anchor="middle">max L2 norm</text>
+
+        <!-- AdamW -->
+        <line x1="506" y1="879" x2="526" y2="879" stroke="#d2a8ff" stroke-width="1.5" marker-end="url(#sd-arr-purple)"/>
+        <rect x="376" y="914" width="180" height="42" rx="6" fill="#1a0a2e" stroke="#d2a8ff" stroke-width="1.5"/>
+        <!-- arrow down then across for AdamW -->
+        <line x1="528" y1="879" x2="528" y2="900" stroke="#d2a8ff" stroke-width="1.5"/>
+        <line x1="528" y1="900" x2="466" y2="900" stroke="#d2a8ff" stroke-width="1.5" marker-end="url(#sd-arr-purple)"/>
+        <text x="466" y="932" class="sd-label" fill="#d2a8ff" text-anchor="middle">AdamW.step()</text>
+        <text x="466" y="946" class="sd-sub" text-anchor="middle">m, v, bias-correction, WD</text>
+
+        <!-- cosine LR -->
+        <rect x="44" y="914" width="180" height="42" rx="6" fill="#1a0a2e" stroke="#d2a8ff" stroke-width="1.5"/>
+        <text x="134" y="932" class="sd-label" fill="#d2a8ff" text-anchor="middle">cosine_lr_schedule()</text>
+        <text x="134" y="946" class="sd-sub" text-anchor="middle">warmup → cosine → min_lr</text>
+
+        <!-- Checkpoint -->
+        <rect x="246" y="914" width="118" height="42" rx="6" fill="#1a0a2e" stroke="#d2a8ff" stroke-width="1.5"/>
+        <text x="305" y="932" class="sd-label" fill="#d2a8ff" text-anchor="middle">Checkpoint</text>
+        <text x="305" y="946" class="sd-sub" text-anchor="middle">model + opt state</text>
+        <!-- arrows between LR, Checkpoint, AdamW -->
+        <line x1="224" y1="935" x2="246" y2="935" stroke="#d2a8ff" stroke-width="1.5" marker-end="url(#sd-arr-purple)"/>
+        <line x1="364" y1="935" x2="376" y2="935" stroke="#d2a8ff" stroke-width="1.5" marker-end="url(#sd-arr-purple)"/>
+
+        <!-- loop back arrow -->
+        <text x="44" y="978" class="sd-sub" fill="#8b949e">↺ loop for max_steps (e.g. 2000 steps, ~13 min on Apple MPS)</text>
+
+        <!-- ════════════════════════════════════════════════════ -->
+        <!-- SECTION 4 · INFERENCE                              -->
+        <!-- ════════════════════════════════════════════════════ -->
+        <rect x="596" y="118" width="350" height="310" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+        <text x="612" y="138" class="sd-title" fill="#56d364">④ Inference  (generate.py · kv_cache_toy.py)</text>
+
+        <!-- Path A: generate() -->
+        <rect x="620" y="148" width="300" height="36" rx="6" fill="#0a1f14" stroke="#56d364" stroke-width="1.5"/>
+        <text x="770" y="163" class="sd-label" fill="#56d364" text-anchor="middle">prompt → Tokenizer.encode()</text>
+        <text x="770" y="177" class="sd-sub" text-anchor="middle">→  integer token list</text>
+        <line x1="770" y1="184" x2="770" y2="203" stroke="#56d364" stroke-width="1.5" marker-end="url(#sd-arr-green)"/>
+
+        <!-- branch label -->
+        <text x="680" y="218" class="sd-sub" fill="#8b949e" text-anchor="middle">Path A</text>
+        <text x="860" y="218" class="sd-sub" fill="#8b949e" text-anchor="middle">Path B</text>
+        <line x1="770" y1="204" x2="690" y2="204" stroke="#56d364" stroke-width="1" stroke-dasharray="3 2"/>
+        <line x1="770" y1="204" x2="850" y2="204" stroke="#56d364" stroke-width="1" stroke-dasharray="3 2"/>
+        <line x1="690" y1="204" x2="690" y2="224" stroke="#56d364" stroke-width="1.2" marker-end="url(#sd-arr-green)"/>
+        <line x1="850" y1="204" x2="850" y2="224" stroke="#56d364" stroke-width="1.2" marker-end="url(#sd-arr-green)"/>
+
+        <!-- generate() -->
+        <rect x="616" y="226" width="148" height="52" rx="6" fill="#0a1f14" stroke="#56d364" stroke-width="1.5"/>
+        <text x="690" y="244" class="sd-label" fill="#56d364" text-anchor="middle">generate()</text>
+        <text x="690" y="258" class="sd-sub" text-anchor="middle">temperature / top-k</text>
+        <text x="690" y="270" class="sd-sub" text-anchor="middle">full recompute O(T²)</text>
+
+        <!-- decode_with_cache() -->
+        <rect x="776" y="226" width="158" height="52" rx="6" fill="#0a1f14" stroke="#56d364" stroke-width="1.5"/>
+        <text x="855" y="244" class="sd-label" fill="#56d364" text-anchor="middle">decode_with_cache()</text>
+        <text x="855" y="258" class="sd-sub" text-anchor="middle">KV cache per layer</text>
+        <text x="855" y="270" class="sd-sub" text-anchor="middle">O(1) per token 🚀</text>
+
+        <line x1="690" y1="278" x2="690" y2="296" stroke="#56d364" stroke-width="1.2"/>
+        <line x1="855" y1="278" x2="855" y2="296" stroke="#56d364" stroke-width="1.2"/>
+        <line x1="690" y1="296" x2="770" y2="296" stroke="#56d364" stroke-width="1.2"/>
+        <line x1="855" y1="296" x2="770" y2="296" stroke="#56d364" stroke-width="1.2"/>
+        <line x1="770" y1="296" x2="770" y2="315" stroke="#56d364" stroke-width="1.5" marker-end="url(#sd-arr-green)"/>
+
+        <!-- Decoded text -->
+        <rect x="640" y="317" width="260" height="42" rx="6" fill="#0a1f14" stroke="#56d364" stroke-width="1.5"/>
+        <text x="770" y="336" class="sd-label" fill="#56d364" text-anchor="middle">Tokenizer.decode()</text>
+        <text x="770" y="350" class="sd-sub" text-anchor="middle">→  generated story text</text>
+
+        <!-- KV Cache detail box -->
+        <rect x="614" y="372" width="316" height="44" rx="6" fill="#0d1117" stroke="#30363d" stroke-width="1" stroke-dasharray="4 3"/>
+        <text x="622" y="388" class="sd-sub" fill="#a5f3fc">KV Cache:  K, V tensors (B, H, T_past, D) per layer</text>
+        <text x="622" y="404" class="sd-sub" fill="#8b949e">Prefill on full prompt, then O(1) decode step (grow by 1 row/step)</text>
+
+        <!-- ════════════════════════════════════════════════════ -->
+        <!-- SECTION 5 · SCALING ESTIMATOR                      -->
+        <!-- ════════════════════════════════════════════════════ -->
+        <rect x="596" y="444" width="650" height="550" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+        <text x="612" y="464" class="sd-title" fill="#ffa657">⑤ Scaling Estimator + Explorer  (estimator.py · profile_train.py · streamlit_app.py)</text>
+
+        <!-- ModelSpec -->
+        <rect x="616" y="474" width="170" height="80" rx="6" fill="#1f1200" stroke="#ffa657" stroke-width="1.5"/>
+        <text x="701" y="494" class="sd-label" fill="#ffa657" text-anchor="middle">ModelSpec</text>
+        <text x="701" y="510" class="sd-sub" text-anchor="middle">d_model, d_ff, n_layers</text>
+        <text x="701" y="524" class="sd-sub" text-anchor="middle">n_heads, n_kv_heads</text>
+        <text x="701" y="538" class="sd-sub" text-anchor="middle">vocab_size, head_dim</text>
+
+        <!-- HardwareSpec -->
+        <rect x="616" y="568" width="170" height="66" rx="6" fill="#1f1200" stroke="#ffa657" stroke-width="1.5"/>
+        <text x="701" y="588" class="sd-label" fill="#ffa657" text-anchor="middle">HardwareSpec</text>
+        <text x="701" y="604" class="sd-sub" text-anchor="middle">peak_flops, bandwidth</text>
+        <text x="701" y="618" class="sd-sub" text-anchor="middle">device_memory, MFU</text>
+
+        <!-- Hardware catalogue badge -->
+        <rect x="616" y="644" width="170" height="32" rx="5" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+        <text x="701" y="660" class="sd-sub" text-anchor="middle" fill="#8b949e">Catalogue: Apple CPU/MPS</text>
+        <text x="701" y="672" class="sd-sub" text-anchor="middle" fill="#8b949e">T4 · A10G · A100 · H100</text>
+
+        <!-- arrows to estimator.py -->
+        <line x1="786" y1="514" x2="820" y2="514" stroke="#ffa657" stroke-width="1.5" marker-end="url(#sd-arr-orange)"/>
+        <line x1="786" y1="601" x2="806" y2="601" stroke="#ffa657" stroke-width="1.5"/>
+        <line x1="806" y1="601" x2="806" y2="514" stroke="#ffa657" stroke-width="1.5"/>
+        <line x1="806" y1="514" x2="820" y2="514" stroke="#ffa657" stroke-width="0"/>
+
+        <!-- estimator.py -->
+        <rect x="822" y="464" width="200" height="290" rx="6" fill="#1f1200" stroke="#ffa657" stroke-width="1.5"/>
+        <text x="922" y="484" class="sd-label" fill="#ffa657" text-anchor="middle">estimator.py</text>
+        <text x="922" y="498" class="sd-sub" text-anchor="middle">pure-Python, no torch</text>
+        <line x1="826" y1="506" x2="1018" y2="506" stroke="#30363d" stroke-width="1"/>
+
+        <text x="834" y="522" class="sd-sub" fill="#ffa657">param_count()</text>
+        <text x="834" y="536" class="sd-sub" fill="#8b949e">  Σ layer weights + embeddings</text>
+        <text x="834" y="556" class="sd-sub" fill="#ffa657">train_flops_per_step()</text>
+        <text x="834" y="570" class="sd-sub" fill="#8b949e">  18·B·T·D·F + attn terms</text>
+        <text x="834" y="590" class="sd-sub" fill="#ffa657">activation_bytes()</text>
+        <text x="834" y="604" class="sd-sub" fill="#8b949e">  2 · coeff · B · T · D · L</text>
+        <text x="834" y="624" class="sd-sub" fill="#ffa657">kv_cache_bytes_per_sequence()</text>
+        <text x="834" y="638" class="sd-sub" fill="#8b949e">  2 · T · L · H_kv · D · bytes</text>
+        <text x="834" y="658" class="sd-sub" fill="#ffa657">decode_step_time_lower_bound()</text>
+        <text x="834" y="672" class="sd-sub" fill="#8b949e">  (B·kv + params) / bandwidth</text>
+        <text x="834" y="692" class="sd-sub" fill="#ffa657">predict_tokens_per_second_v2()</text>
+        <text x="834" y="706" class="sd-sub" fill="#8b949e">  roofline: memory vs compute</text>
+        <text x="834" y="726" class="sd-sub" fill="#ffa657">train_time_estimate_s()</text>
+        <text x="834" y="740" class="sd-sub" fill="#8b949e">  FLOPs / (devices·peak·MFU)</text>
+
+        <!-- profile_train.py -->
+        <rect x="616" y="690" width="190" height="88" rx="6" fill="#1f1200" stroke="#ffa657" stroke-width="1.5" stroke-dasharray="5 3"/>
+        <text x="711" y="710" class="sd-label" fill="#ffa657" text-anchor="middle">profile_train.py  📏</text>
+        <text x="711" y="724" class="sd-sub" text-anchor="middle">MEASURED (torch.profiler)</text>
+        <text x="711" y="738" class="sd-sub" text-anchor="middle">profile_one(): step_time_ms</text>
+        <text x="711" y="752" class="sd-sub" text-anchor="middle">sweep(): seq×batch grid</text>
+        <text x="711" y="766" class="sd-sub" text-anchor="middle">→  results/local/sweep.json</text>
+        <line x1="806" y1="734" x2="822" y2="734" stroke="#ffa657" stroke-width="1.5" stroke-dasharray="4 2" marker-end="url(#sd-arr-orange)"/>
+
+        <!-- Calibration finding -->
+        <rect x="616" y="790" width="400" height="52" rx="6" fill="#1a0a00" stroke="#f78166" stroke-width="1.5"/>
+        <text x="620" y="808" class="sd-sub" fill="#f78166">⚠  JAX Scaling Book estimator wrong by 65–154% on real hardware</text>
+        <text x="620" y="824" class="sd-sub" fill="#8b949e">    2 fixes implemented → MAE 64% → 29%  (overhead floor + roofline gate)</text>
+
+        <!-- arrow from estimator to Streamlit -->
+        <line x1="1022" y1="610" x2="1052" y2="610" stroke="#ffa657" stroke-width="1.5" marker-end="url(#sd-arr-orange)"/>
+
+        <!-- Streamlit Explorer -->
+        <rect x="1054" y="464" width="178" height="376" rx="6" fill="#2a0f0a" stroke="#f78166" stroke-width="1.5"/>
+        <text x="1143" y="484" class="sd-label" fill="#f78166" text-anchor="middle">Streamlit</text>
+        <text x="1143" y="498" class="sd-sub" text-anchor="middle">Explorer</text>
+        <line x1="1058" y1="506" x2="1228" y2="506" stroke="#30363d" stroke-width="1"/>
+
+        <text x="1066" y="524" class="sd-sub" fill="#f78166">Tab 1 — Simulated</text>
+        <text x="1066" y="538" class="sd-sub" fill="#8b949e">  params vs d_model</text>
+
+        <text x="1066" y="558" class="sd-sub" fill="#f78166">Tab 2 — Simulated</text>
+        <text x="1066" y="572" class="sd-sub" fill="#8b949e">  KV cache vs ctx len</text>
+
+        <text x="1066" y="592" class="sd-sub" fill="#f78166">Tab 3 — Simulated</text>
+        <text x="1066" y="606" class="sd-sub" fill="#8b949e">  activation memory</text>
+
+        <text x="1066" y="626" class="sd-sub" fill="#f78166">Tab 4 — Simulated</text>
+        <text x="1066" y="640" class="sd-sub" fill="#8b949e">  decode latency frontier</text>
+
+        <text x="1066" y="660" class="sd-sub" fill="#f78166">Tab 5 — Hybrid 🔬</text>
+        <text x="1066" y="674" class="sd-sub" fill="#8b949e">  measured vs estimated</text>
+        <text x="1066" y="688" class="sd-sub" fill="#8b949e">  scatter + % error table</text>
+
+        <line x1="1058" y1="700" x2="1228" y2="700" stroke="#30363d" stroke-width="1"/>
+        <text x="1066" y="716" class="sd-sub" fill="#8b949e">Sidebar controls:</text>
+        <text x="1066" y="730" class="sd-sub" fill="#8b949e">  ModelSpec sliders</text>
+        <text x="1066" y="744" class="sd-sub" fill="#8b949e">  RuntimeSpec sliders</text>
+        <text x="1066" y="758" class="sd-sub" fill="#8b949e">  Hardware selector</text>
+        <text x="1066" y="778" class="sd-sub" fill="#8b949e">  → live chart update</text>
+        <text x="1066" y="798" class="sd-sub" fill="#8b949e">  via st.sidebar</text>
+        <text x="1066" y="818" class="sd-sub" fill="#8b949e">  + plotly_chart()</text>
+        <text x="1066" y="832" class="sd-sub" fill="#8b949e">  use_container_width</text>
+
+      </svg>
+    </div>
+    <!-- ── end system view ── -->
+
+    <!-- ── Context View ── -->
+    <div id="context-view">
+      <div class="cx-page">
+
+        <!-- Hero -->
+        <div class="cx-hero">
+          <div style="margin-bottom:10px">
+            <span class="cx-tag">PyTorch</span><span class="cx-tag">Streamlit</span><span class="cx-tag">BPE</span>
+            <span class="cx-tag">CS336-inspired</span><span class="cx-tag">TinyStories</span><span class="cx-tag">Apple Silicon</span>
+          </div>
+          <h2>llm-from-scratch-lab</h2>
+          <p>A decoder-only language model built from scratch in PyTorch, trained on TinyStories, with a closed-form scaling estimator and a calibration study showing where the published formulas break — and fixing them.</p>
+        </div>
+
+        <!-- Why -->
+        <div class="cx-section" id="cx-why">
+          <h3>💡 Why this project</h3>
+          <div class="cx-cards">
+            <div class="cx-card">
+              <div class="cx-card-icon">📚</div>
+              <h4>CS336 inspiration</h4>
+              <p>Inspired by Stanford CS336 (Spring 2025), an independent reimplementation — not coursework. Goal: understand every component by building it, not importing it.</p>
+            </div>
+            <div class="cx-card">
+              <div class="cx-card-icon">🔬</div>
+              <h4>The real question</h4>
+              <p>Most "GPT from scratch" repos stop at a working model. The interesting questions are in the <span class="cx-hl">assumptions model</span>: where does the back-of-envelope agree with reality, and where does it break?</p>
+            </div>
+            <div class="cx-card">
+              <div class="cx-card-icon">⚡</div>
+              <h4>MacBook feasible</h4>
+              <p>Everything runs on a MacBook — no cloud required for the core results. Apple MPS backend, ~13 min to train, ~2 GB data download.</p>
+            </div>
+            <div class="cx-card">
+              <div class="cx-card-icon">📉</div>
+              <h4>Calibration study</h4>
+              <p>The JAX Scaling Book estimator was <span class="cx-hl">wrong by 65–154%</span> on real hardware. This repo documents exactly why and proposes four fixes, implementing two — cutting MAE from 64% → 29%.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- What -->
+        <div class="cx-section" id="cx-what">
+          <h3>🔧 What it does — three stacked artifacts</h3>
+          <div class="cx-cards">
+            <div class="cx-card" style="border-top: 2px solid #58a6ff">
+              <div class="cx-card-icon">🤖</div>
+              <h4>Artifact 1 — Working LM</h4>
+              <p>A correct, tested, end-to-end decoder-only transformer trained on TinyStories. Feed it the start of a sentence; it finishes the story. Loss: <span class="cx-hl">245 → 2.87</span>, val perplexity ~20.</p>
+            </div>
+            <div class="cx-card" style="border-top: 2px solid #ffa657">
+              <div class="cx-card-icon">📐</div>
+              <h4>Artifact 2 — Estimator</h4>
+              <p>Pure-Python closed-form formulas for parameters, FLOPs, activation memory, KV cache size, decode latency, and training time. No torch dependency — runs in <span class="cx-hl">microseconds</span>.</p>
+            </div>
+            <div class="cx-card" style="border-top: 2px solid #f78166">
+              <div class="cx-card-icon">📊</div>
+              <h4>Artifact 3 — Calibration study</h4>
+              <p>torch.profiler benchmarks on CPU + MPS measured against estimator predictions. Found systematic errors, proposed fixes, verified improvements. The engineering content lives here.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- How -->
+        <div class="cx-section" id="cx-how">
+          <h3>⚙️ How it works</h3>
+          <div class="cx-cards">
+            <div class="cx-card">
+              <div class="cx-card-icon">🔤</div>
+              <h4>Tokenization</h4>
+              <p>Byte-level BPE trained on a 5 MB sample of TinyStories. GPT-2 pretokenization pattern, tie-break by lex order. Vocab size 10,000. Saves as vocab.json + merges.txt.</p>
+            </div>
+            <div class="cx-card">
+              <div class="cx-card-icon">🧠</div>
+              <h4>Transformer core</h4>
+              <p>Pre-norm architecture: RMSNorm → CausalMHA (RoPE, tril mask) → residual → RMSNorm → SwiGLU FFN → residual. CS336 A1-compatible state_dict keys.</p>
+            </div>
+            <div class="cx-card">
+              <div class="cx-card-icon">🏋️</div>
+              <h4>Training</h4>
+              <p>Custom AdamW (decoupled weight decay), cosine LR schedule with linear warmup, gradient clipping (max L2 norm), checkpoint save/load, validation perplexity every N steps.</p>
+            </div>
+            <div class="cx-card">
+              <div class="cx-card-icon">📡</div>
+              <h4>Profiling</h4>
+              <p>torch.profiler harness sweeps seq_len × batch_size grid. Warmup + timed steps, Chrome-trace export. Results written to results/local/sweep.json.</p>
+            </div>
+            <div class="cx-card">
+              <div class="cx-card-icon">🧮</div>
+              <h4>Estimator</h4>
+              <p>Closed-form from the JAX Scaling Book. Computes params, FLOPs, activation memory, KV cache, decode latency lower bound, train time, roofline threshold.</p>
+            </div>
+            <div class="cx-card">
+              <div class="cx-card-icon">🖥️</div>
+              <h4>Streamlit explorer</h4>
+              <p>5 Plotly tabs with provenance labels (Simulated / Measured / Hybrid). Sidebar sliders control ModelSpec / RuntimeSpec / HardwareSpec live.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Phase checklist -->
+        <div class="cx-section" id="cx-phases">
+          <h3>✅ Phase checklist</h3>
+          <div class="cx-checklist">
+
+            <div class="cx-item">
+              <div class="cx-item-phase">Phase 0</div>
+              <div class="ck done">✓</div>
+              <div class="cx-item-body">
+                <div class="cx-item-title done">Bootstrap<span class="cx-item-tag">complete</span></div>
+                <div class="cx-item-desc">uv workspace, src/ layout, pyproject.toml, GitHub Actions CI, 8 anchor tests from JAX Scaling Book to guard the estimator against drift.</div>
+              </div>
+            </div>
+
+            <div class="cx-item">
+              <div class="cx-item-phase">Phase 1</div>
+              <div class="ck done">✓</div>
+              <div class="cx-item-body">
+                <div class="cx-item-title done">Byte-level BPE tokenizer<span class="cx-item-tag">complete</span></div>
+                <div class="cx-item-desc">train_bpe() trains vocab + merges from raw text. Tokenizer class with encode/decode, special tokens, GPT-2 pretokenization pattern. TinyStories download + tokenize scripts.</div>
+              </div>
+            </div>
+
+            <div class="cx-item">
+              <div class="cx-item-phase">Phase 2</div>
+              <div class="ck done">✓</div>
+              <div class="cx-item-body">
+                <div class="cx-item-title done">Decoder-only Transformer core<span class="cx-item-tag">complete</span></div>
+                <div class="cx-item-desc">RMSNorm, SwiGLU FFN, RoPE positional encoding, CausalMultiHeadAttention with tril mask, TransformerBlock (pre-norm), TransformerLM. CS336 A1-compatible state_dict keys.</div>
+              </div>
+            </div>
+
+            <div class="cx-item">
+              <div class="cx-item-phase">Phase 3</div>
+              <div class="ck done">✓</div>
+              <div class="cx-item-body">
+                <div class="cx-item-title done">Training loop<span class="cx-item-tag">complete</span></div>
+                <div class="cx-item-desc">Custom AdamW (decoupled WD), cosine LR schedule with warmup, gradient clipping, checkpoint save/load, validation perplexity. Smoke test: loss 245→2.87, val PPL ~20, ~13 min on Apple MPS.</div>
+              </div>
+            </div>
+
+            <div class="cx-item">
+              <div class="cx-item-phase">Phase 4</div>
+              <div class="ck done">✓</div>
+              <div class="cx-item-body">
+                <div class="cx-item-title done">torch.profiler harness + sweep<span class="cx-item-tag">complete</span></div>
+                <div class="cx-item-desc">profile_one() times forward passes (warmup + timed steps, Chrome-trace JSON). sweep() runs seq_len × batch_size grid → sweep.json. This is the MEASURED side of the calibration study.</div>
+              </div>
+            </div>
+
+            <div class="cx-item">
+              <div class="cx-item-phase">Phase 5</div>
+              <div class="ck done">✓</div>
+              <div class="cx-item-body">
+                <div class="cx-item-title done">Scaling estimator<span class="cx-item-tag">complete</span></div>
+                <div class="cx-item-desc">Pure-Python closed-form: param_count, train_flops_per_step, activation_bytes, kv_cache_bytes_per_sequence, decode_step_time_lower_bound, train_time_estimate, roofline_intensity_threshold. 8 anchor tests against JAX Scaling Book worked examples.</div>
+              </div>
+            </div>
+
+            <div class="cx-item">
+              <div class="cx-item-phase">Phase 6</div>
+              <div class="ck done">✓</div>
+              <div class="cx-item-body">
+                <div class="cx-item-title done">Streamlit explorer<span class="cx-item-tag">complete</span></div>
+                <div class="cx-item-desc">Interactive Plotly dashboard: 5 tabs (params, KV cache, activation memory, decode frontier, measured-vs-estimated). Sidebar controls ModelSpec / RuntimeSpec / HardwareSpec. Provenance labels on every chart.</div>
+              </div>
+            </div>
+
+            <div class="cx-item">
+              <div class="cx-item-phase">Phase 7</div>
+              <div class="ck done">✓</div>
+              <div class="cx-item-body">
+                <div class="cx-item-title done">KV-cache toy decode<span class="cx-item-tag">complete</span></div>
+                <div class="cx-item-desc">kv_cache_toy.py: decode_with_cache() grows per-layer K/V tensors for O(1)-per-token decode. full_recompute_decode() naive O(T²) baseline for comparison. Educational, not perf-optimised.</div>
+              </div>
+            </div>
+
+            <div class="cx-item" style="opacity:.55">
+              <div class="cx-item-phase">Phase 8</div>
+              <div class="ck todo">✗</div>
+              <div class="cx-item-body">
+                <div class="cx-item-title todo">Cloud GPU validation appendix<span class="cx-item-tag">optional</span></div>
+                <div class="cx-item-desc">Run cloud_a100_sweep.py on a RunPod A100 to validate the estimator against a real datacenter GPU. scripts/cloud_validate.sh scaffolded. Skipped — local results already prove the calibration findings.</div>
+              </div>
+            </div>
+
+            <div class="cx-item">
+              <div class="cx-item-phase">Phase 9</div>
+              <div class="ck done">✓</div>
+              <div class="cx-item-body">
+                <div class="cx-item-title done">Technical note + calibration study<span class="cx-item-tag">complete</span></div>
+                <div class="cx-item-desc">reports/technical_note.md documents the full calibration study. Four specific failure modes identified, two fixes implemented (overhead floor, roofline gate). MAE 64%→29%. Blog draft written.</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Key findings -->
+        <div class="cx-section" id="cx-findings">
+          <h3>📊 Key findings &amp; results</h3>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:20px">
+            <div class="cx-card" style="text-align:center">
+              <div class="cx-num" style="color:#58a6ff">2.87</div>
+              <div style="font-size:12px;font-weight:600;margin-bottom:4px">Final train loss</div>
+              <div style="font-size:11px;color:var(--text-muted)">down from 245 at init</div>
+            </div>
+            <div class="cx-card" style="text-align:center">
+              <div class="cx-num" style="color:#3fb950">~20</div>
+              <div style="font-size:12px;font-weight:600;margin-bottom:4px">Val perplexity</div>
+              <div style="font-size:11px;color:var(--text-muted)">on TinyStories validation</div>
+            </div>
+            <div class="cx-card" style="text-align:center">
+              <div class="cx-num" style="color:#ffa657">13 min</div>
+              <div style="font-size:12px;font-weight:600;margin-bottom:4px">Training time</div>
+              <div style="font-size:11px;color:var(--text-muted)">on Apple M-series MPS</div>
+            </div>
+            <div class="cx-card" style="text-align:center">
+              <div class="cx-num" style="color:#f78166">154%</div>
+              <div style="font-size:12px;font-weight:600;margin-bottom:4px">Max estimator error</div>
+              <div style="font-size:11px;color:var(--text-muted)">before fixes (long seqs)</div>
+            </div>
+            <div class="cx-card" style="text-align:center">
+              <div class="cx-num" style="color:#56d364">29%</div>
+              <div style="font-size:12px;font-weight:600;margin-bottom:4px">MAE after fixes</div>
+              <div style="font-size:11px;color:var(--text-muted)">down from 64% baseline</div>
+            </div>
+            <div class="cx-card" style="text-align:center">
+              <div class="cx-num" style="color:#d2a8ff">68</div>
+              <div style="font-size:12px;font-weight:600;margin-bottom:4px">Tests passing</div>
+              <div style="font-size:11px;color:var(--text-muted)">incl. 8 anchor tests</div>
+            </div>
+          </div>
+
+          <div class="cx-finding">
+            <h4>Finding 1 — Overhead floor missing</h4>
+            <p>The estimator assumed zero fixed per-step launch overhead. On CPU at small batch sizes, the actual step time is dominated by Python + BLAS dispatch latency (~1–5 ms), not by memory bandwidth. Fix: add an overhead_floor_s parameter that caps predicted tokens/s when step time would otherwise be implausibly short.</p>
+          </div>
+          <div class="cx-finding">
+            <h4>Finding 2 — Roofline gate missing</h4>
+            <p>The original formula was purely memory-bound (bandwidth denominator only). At high batch sizes or long sequences, arithmetic intensity crosses the roofline threshold and the kernel becomes compute-bound. Fix: predict_tokens_per_second_v2() computes intensity = FLOPs/bytes and picks the tighter of compute-bound and memory-bound predictions.</p>
+          </div>
+          <div class="cx-finding" style="border-left-color:#ffa657">
+            <h4>Finding 3 — Two more fixes proposed (not yet implemented)</h4>
+            <p>Fix 3: account for non-uniform operator mix (attention is more memory-bound than matmuls; a single roofline threshold is too coarse). Fix 4: calibrate MFU empirically per device rather than using the 0.4 default, which varies significantly across hardware generations.</p>
+          </div>
+
+          <div style="margin-top:20px;padding:14px;background:var(--surface);border-radius:8px;font-size:12px;color:var(--text-muted);line-height:1.6">
+            <b style="color:var(--text)">Bottom line:</b> The JAX Scaling Book formulas are excellent first-order estimates but systematically wrong on real hardware in two predictable ways. This repo makes the failure modes explicit, quantifies them, and shows that two targeted fixes roughly halve the error without increasing formula complexity.
+          </div>
+        </div>
+
+      </div>
+    </div>
+    <!-- ── end context view ── -->
+
+    <svg id="graph-svg">
+      <defs>
+        <marker id="m-imp"  markerWidth="6" markerHeight="6" refX="14" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3z" fill="#58a6ff" opacity=".7"/></marker>
+        <marker id="m-test" markerWidth="6" markerHeight="6" refX="14" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3z" fill="#56d364" opacity=".7"/></marker>
+        <marker id="m-cfg"  markerWidth="6" markerHeight="6" refX="14" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3z" fill="#ffa657" opacity=".7"/></marker>
+        <marker id="m-doc"  markerWidth="6" markerHeight="6" refX="14" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3z" fill="#e3b341" opacity=".7"/></marker>
+        <marker id="m-trg"  markerWidth="6" markerHeight="6" refX="14" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3z" fill="#ff7b72" opacity=".7"/></marker>
+        <marker id="m-def"  markerWidth="6" markerHeight="6" refX="14" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3z" fill="#8b949e" opacity=".5"/></marker>
+      </defs>
+      <g id="zroot">
+        <g id="lg"></g>
+        <g id="ng"></g>
+      </g>
+    </svg>
+    <div id="info">
+      <span id="info-close">×</span>
+      <div class="ip-type" id="ip-type"></div>
+      <div class="ip-name" id="ip-name"></div>
+      <div class="ip-path" id="ip-path"></div>
+      <div class="ip-summary" id="ip-summary"></div>
+      <div class="ip-tags" id="ip-tags"></div>
+      <div id="ip-edges"></div>
+    </div>
+    <div id="tip"></div>
+    <div id="stats">
+      <span><b id="s-nodes">0</b> nodes</span>
+      <span><b id="s-edges">0</b> edges</span>
+      <span><b id="s-layers">0</b> layers</span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── Data ────────────────────────────────────────────────────────────────────
+const LAYERS = [
+  {id:"ui",       name:"UI / Explorer",       color:"#f78166"},
+  {id:"core-ml",  name:"Core ML",             color:"#58a6ff"},
+  {id:"data",     name:"Data & Tokenization", color:"#3fb950"},
+  {id:"estimator",name:"Estimator / Analytics",color:"#d2a8ff"},
+  {id:"package",  name:"Package",             color:"#a5f3fc"},
+  {id:"config",   name:"Config",              color:"#ffa657"},
+  {id:"scripts",  name:"Scripts",             color:"#79c0ff"},
+  {id:"tests",    name:"Tests",               color:"#56d364"},
+  {id:"docs",     name:"Docs / Reports",      color:"#e3b341"},
+  {id:"ci",       name:"CI / CD",             color:"#ff7b72"}
+];
+const LAYER_COLOR = Object.fromEntries(LAYERS.map(l=>[l.id,l.color]));
+
+const NODES_RAW = [
+  {id:"file:app/streamlit_app.py",type:"file",name:"streamlit_app.py",filePath:"app/streamlit_app.py",summary:"Interactive Streamlit explorer: 5 Plotly tabs for params, KV cache, activation memory, decode latency, and measured-vs-estimated. Sidebar controls ModelSpec/RuntimeSpec/HardwareSpec.",tags:["ui","streamlit","plotly"],complexity:"moderate",layer:"ui"},
+  {id:"file:src/lfslab/model.py",type:"file",name:"model.py",filePath:"src/lfslab/model.py",summary:"Decoder-only Transformer: RMSNorm + SwiGLU + RoPE + causal MHA (pre-norm). TransformerLM wraps N TransformerBlocks. CS336 A1-compatible state_dict keys.",tags:["model","transformer","pytorch","core"],complexity:"complex",layer:"core-ml"},
+  {id:"file:src/lfslab/train.py",type:"file",name:"train.py",filePath:"src/lfslab/train.py",summary:"Training loop: custom AdamW, cosine LR + warmup, gradient clipping, checkpoint save/load, validation perplexity. Loss 245→2.87 in ~13 min on Apple silicon.",tags:["training","optimizer","adamw"],complexity:"complex",layer:"core-ml"},
+  {id:"file:src/lfslab/tokenizer.py",type:"file",name:"tokenizer.py",filePath:"src/lfslab/tokenizer.py",summary:"Byte-level BPE with GPT-2 pretokenization. train_bpe() builds vocab+merges; Tokenizer class encodes/decodes, handles special tokens.",tags:["tokenizer","bpe","nlp"],complexity:"complex",layer:"data"},
+  {id:"file:src/lfslab/estimator.py",type:"file",name:"estimator.py",filePath:"src/lfslab/estimator.py",summary:"Pure-Python closed-form scaling estimator: params, FLOPs, activation memory, KV cache, decode latency, train time, roofline threshold. No torch dependency.",tags:["estimator","scaling","roofline","pure-python"],complexity:"moderate",layer:"estimator"},
+  {id:"file:src/lfslab/hardware.py",type:"file",name:"hardware.py",filePath:"src/lfslab/hardware.py",summary:"Device catalogue: Apple CPU/MPS, T4, A10G, A100, H100 HardwareSpec entries. pick_device() selects best available torch device.",tags:["hardware","device","gpu"],complexity:"simple",layer:"estimator"},
+  {id:"file:src/lfslab/plotting.py",type:"file",name:"plotting.py",filePath:"src/lfslab/plotting.py",summary:"Plotly chart DataFrame helpers with provenance labels (Simulated/Measured/Hybrid). Serves params curve, KV cache, activation memory, measured_vs_estimated.",tags:["plotting","pandas","charts"],complexity:"moderate",layer:"estimator"},
+  {id:"file:src/lfslab/profile_train.py",type:"file",name:"profile_train.py",filePath:"src/lfslab/profile_train.py",summary:"torch.profiler harness (MEASURED side). profile_one() times forward passes; sweep() runs seq×batch grid → results/local/sweep.json.",tags:["profiling","benchmark","measured"],complexity:"moderate",layer:"estimator"},
+  {id:"file:src/lfslab/generate.py",type:"file",name:"generate.py",filePath:"src/lfslab/generate.py",summary:"Greedy / temperature / top-k autoregressive generation. Truncates context to context_length when needed.",tags:["generation","inference","sampling"],complexity:"simple",layer:"core-ml"},
+  {id:"file:src/lfslab/data.py",type:"file",name:"data.py",filePath:"src/lfslab/data.py",summary:"Dataset helpers: load_token_stream() mmaps .npy token array; save_token_stream() writes uint16/uint32.",tags:["data","dataset","numpy"],complexity:"simple",layer:"data"},
+  {id:"file:src/lfslab/kv_cache_toy.py",type:"file",name:"kv_cache_toy.py",filePath:"src/lfslab/kv_cache_toy.py",summary:"Educational KV-cache decode: decode_with_cache() O(1)-per-token vs full_recompute_decode() O(T²) baseline.",tags:["kv-cache","inference","educational"],complexity:"moderate",layer:"core-ml"},
+  {id:"file:src/lfslab/__init__.py",type:"file",name:"__init__.py",filePath:"src/lfslab/__init__.py",summary:"Package init exposing __version__.",tags:["package"],complexity:"simple",layer:"package"},
+  {id:"config:configs/tiny_cpu.yaml",type:"config",name:"tiny_cpu.yaml",filePath:"configs/tiny_cpu.yaml",summary:"Training config for CPU smoke runs: small model, short context, low batch size.",tags:["config","training","cpu"],complexity:"simple",layer:"config"},
+  {id:"config:configs/tiny_mps.yaml",type:"config",name:"tiny_mps.yaml",filePath:"configs/tiny_mps.yaml",summary:"Training config for Apple MPS: larger model, longer sequences, higher batch size.",tags:["config","training","mps"],complexity:"simple",layer:"config"},
+  {id:"config:configs/estimator_defaults.yaml",type:"config",name:"estimator_defaults.yaml",filePath:"configs/estimator_defaults.yaml",summary:"Default ModelSpec/HardwareSpec values for the Streamlit explorer.",tags:["config","estimator"],complexity:"simple",layer:"config"},
+  {id:"config:pyproject.toml",type:"config",name:"pyproject.toml",filePath:"pyproject.toml",summary:"Project manifest: hatchling build, torch/streamlit/plotly deps, ruff+mypy, pytest markers.",tags:["config","build","deps"],complexity:"simple",layer:"package"},
+  {id:"pipeline:.github/workflows/ci.yml",type:"pipeline",name:"ci.yml",filePath:".github/workflows/ci.yml",summary:"GitHub Actions CI: runs full pytest suite on push/PR.",tags:["ci","github-actions","testing"],complexity:"simple",layer:"ci"},
+  {id:"file:scripts/download_data.py",type:"file",name:"download_data.py",filePath:"scripts/download_data.py",summary:"Downloads TinyStoriesV2-GPT4 train/valid (~2 GB). Skips if already present.",tags:["script","data","tinystories"],complexity:"simple",layer:"scripts"},
+  {id:"file:scripts/tokenize_corpus.py",type:"file",name:"tokenize_corpus.py",filePath:"scripts/tokenize_corpus.py",summary:"Trains BPE on TinyStories corpus and encodes train/valid splits to .npy token arrays.",tags:["script","tokenizer","preprocessing"],complexity:"simple",layer:"scripts"},
+  {id:"file:scripts/cloud_a100_sweep.py",type:"file",name:"cloud_a100_sweep.py",filePath:"scripts/cloud_a100_sweep.py",summary:"Paste-and-run benchmark sweep for RunPod A100 cloud validation.",tags:["script","cloud","a100"],complexity:"simple",layer:"scripts"},
+  {id:"document:README.md",type:"document",name:"README.md",filePath:"README.md",summary:"Project overview: three stacked artifacts (LM, estimator, calibration study). Quickstart, architecture diagram, phase status.",tags:["docs","readme"],complexity:"simple",layer:"docs"},
+  {id:"document:reports/technical_note.md",type:"document",name:"technical_note.md",filePath:"reports/technical_note.md",summary:"Full calibration study: JAX Scaling Book estimator wrong by 65–154%, four fixes proposed, two implemented, MAE 64%→29%.",tags:["docs","research","calibration"],complexity:"moderate",layer:"docs"},
+  {id:"document:reports/blog_drafts/01-when-the-estimator-breaks.md",type:"document",name:"01-when-the-estimator-breaks.md",filePath:"reports/blog_drafts/01-when-the-estimator-breaks.md",summary:"Narrative blog version of the calibration study — shorter, story-driven.",tags:["docs","blog"],complexity:"simple",layer:"docs"},
+  {id:"file:tests/test_model.py",type:"file",name:"test_model.py",filePath:"tests/test_model.py",summary:"Tests for TransformerLM: output shape, causal masking, RMSNorm, SwiGLU, RoPE.",tags:["test","model"],complexity:"simple",layer:"tests"},
+  {id:"file:tests/test_estimator_anchors.py",type:"file",name:"test_estimator_anchors.py",filePath:"tests/test_estimator_anchors.py",summary:"8 anchor tests from JAX Scaling Book worked examples: 16B params, 512KiB KV, 6.3e24 FLOPs, Llama-3-70B shape, etc.",tags:["test","estimator","anchors"],complexity:"simple",layer:"tests"},
+  {id:"file:tests/test_estimator_v2.py",type:"file",name:"test_estimator_v2.py",filePath:"tests/test_estimator_v2.py",summary:"Tests for v2 roofline-gated predictor: memory vs compute switching, overhead floor.",tags:["test","estimator"],complexity:"simple",layer:"tests"},
+  {id:"file:tests/test_train.py",type:"file",name:"test_train.py",filePath:"tests/test_train.py",summary:"Training tests: AdamW step, cosine schedule, gradient clipping, checkpoint round-trip.",tags:["test","training"],complexity:"simple",layer:"tests"},
+  {id:"file:tests/test_tokenizer.py",type:"file",name:"test_tokenizer.py",filePath:"tests/test_tokenizer.py",summary:"Tokenizer tests: BPE train, encode/decode round-trip, special tokens, save/load.",tags:["test","tokenizer"],complexity:"simple",layer:"tests"},
+  {id:"file:tests/test_profile.py",type:"file",name:"test_profile.py",filePath:"tests/test_profile.py",summary:"Tests for profile_train: profile_one schema, sweep grid dimensions.",tags:["test","profiling"],complexity:"simple",layer:"tests"},
+  {id:"file:tests/test_smoke.py",type:"file",name:"test_smoke.py",filePath:"tests/test_smoke.py",summary:"E2E smoke test: tiny model, a few train steps, loss decreases.",tags:["test","smoke","e2e"],complexity:"simple",layer:"tests"},
+  {id:"file:tests/test_app.py",type:"file",name:"test_app.py",filePath:"tests/test_app.py",summary:"Streamlit app unit tests: plotting helpers, DataFrame schemas.",tags:["test","app"],complexity:"simple",layer:"tests"},
+  {id:"file:tests/adapters.py",type:"file",name:"adapters.py",filePath:"tests/adapters.py",summary:"CS336 A1 official adapter signatures — drop the course pytest suite in to verify against the reference.",tags:["test","adapter","cs336"],complexity:"simple",layer:"tests"},
+  {id:"class:model:TransformerLM",type:"class",name:"TransformerLM",filePath:"src/lfslab/model.py",summary:"Top-level decoder-only LM: embeds tokens → N TransformerBlocks → RMSNorm → lm_head.",tags:["model","class"],complexity:"complex",layer:"core-ml"},
+  {id:"class:model:TransformerBlock",type:"class",name:"TransformerBlock",filePath:"src/lfslab/model.py",summary:"Single transformer layer: pre-norm RMSNorm → CausalMHA (RoPE) → residual; RMSNorm → SwiGLU → residual.",tags:["model","class","block"],complexity:"moderate",layer:"core-ml"},
+  {id:"class:model:CausalMHA",type:"class",name:"CausalMHA",filePath:"src/lfslab/model.py",summary:"Causal multi-head attention with Q/K/V/O projections, optional RoPE, torch.tril causal mask.",tags:["model","attention","class"],complexity:"complex",layer:"core-ml"},
+  {id:"class:est:ModelSpec",type:"class",name:"ModelSpec",filePath:"src/lfslab/estimator.py",summary:"Frozen dataclass: d_model, d_ff, n_layers, n_heads, n_kv_heads, head_dim, vocab_size.",tags:["estimator","dataclass"],complexity:"simple",layer:"estimator"},
+  {id:"class:est:HardwareSpec",type:"class",name:"HardwareSpec",filePath:"src/lfslab/estimator.py",summary:"Frozen dataclass: device name, peak FLOPs/s, memory bandwidth, device memory, MFU.",tags:["estimator","hardware"],complexity:"simple",layer:"estimator"},
+  {id:"class:tok:Tokenizer",type:"class",name:"Tokenizer",filePath:"src/lfslab/tokenizer.py",summary:"BPE tokenizer: encode/decode, special tokens, save/load via vocab.json + merges.txt.",tags:["tokenizer","class","bpe"],complexity:"complex",layer:"data"},
+  {id:"class:train:AdamW",type:"class",name:"AdamW",filePath:"src/lfslab/train.py",summary:"Custom AdamW with decoupled weight decay (Loshchilov & Hutter). Extends torch.optim.Optimizer.",tags:["optimizer","class"],complexity:"moderate",layer:"core-ml"}
+];
+
+const EDGES_RAW = [
+  {s:"file:src/lfslab/train.py",t:"file:src/lfslab/model.py",type:"imports",label:"TransformerLM, softmax"},
+  {s:"file:src/lfslab/train.py",t:"file:src/lfslab/data.py",type:"imports",label:"load_token_stream"},
+  {s:"file:src/lfslab/train.py",t:"file:src/lfslab/hardware.py",type:"imports",label:"pick_device"},
+  {s:"file:src/lfslab/generate.py",t:"file:src/lfslab/model.py",type:"imports",label:"softmax"},
+  {s:"file:src/lfslab/kv_cache_toy.py",t:"file:src/lfslab/model.py",type:"imports",label:"TransformerBlock, apply_rope, SDPA"},
+  {s:"file:src/lfslab/profile_train.py",t:"file:src/lfslab/model.py",type:"imports",label:"TransformerLM"},
+  {s:"file:src/lfslab/profile_train.py",t:"file:src/lfslab/hardware.py",type:"imports",label:"pick_device"},
+  {s:"file:src/lfslab/profile_train.py",t:"file:src/lfslab/train.py",type:"imports",label:"build_model_from_config"},
+  {s:"file:src/lfslab/plotting.py",t:"file:src/lfslab/estimator.py",type:"imports",label:"ModelSpec, param_count, kv_cache…"},
+  {s:"file:src/lfslab/hardware.py",t:"file:src/lfslab/estimator.py",type:"imports",label:"HardwareSpec"},
+  {s:"file:app/streamlit_app.py",t:"file:src/lfslab/estimator.py",type:"imports",label:"all estimator formulas"},
+  {s:"file:app/streamlit_app.py",t:"file:src/lfslab/hardware.py",type:"imports",label:"CATALOGUE"},
+  {s:"file:app/streamlit_app.py",t:"file:src/lfslab/plotting.py",type:"imports",label:"chart helpers"},
+  {s:"file:app/streamlit_app.py",t:"file:src/lfslab/__init__.py",type:"imports",label:"__version__"},
+  {s:"file:src/lfslab/model.py",t:"class:model:TransformerLM",type:"contains"},
+  {s:"file:src/lfslab/model.py",t:"class:model:TransformerBlock",type:"contains"},
+  {s:"file:src/lfslab/model.py",t:"class:model:CausalMHA",type:"contains"},
+  {s:"file:src/lfslab/estimator.py",t:"class:est:ModelSpec",type:"contains"},
+  {s:"file:src/lfslab/estimator.py",t:"class:est:HardwareSpec",type:"contains"},
+  {s:"file:src/lfslab/tokenizer.py",t:"class:tok:Tokenizer",type:"contains"},
+  {s:"file:src/lfslab/train.py",t:"class:train:AdamW",type:"contains"},
+  {s:"class:model:TransformerLM",t:"class:model:TransformerBlock",type:"contains"},
+  {s:"class:model:TransformerBlock",t:"class:model:CausalMHA",type:"contains"},
+  {s:"file:scripts/tokenize_corpus.py",t:"file:src/lfslab/tokenizer.py",type:"imports"},
+  {s:"file:scripts/cloud_a100_sweep.py",t:"file:src/lfslab/profile_train.py",type:"imports"},
+  {s:"config:configs/tiny_cpu.yaml",t:"file:src/lfslab/train.py",type:"configures"},
+  {s:"config:configs/tiny_mps.yaml",t:"file:src/lfslab/train.py",type:"configures"},
+  {s:"config:configs/estimator_defaults.yaml",t:"file:src/lfslab/estimator.py",type:"configures"},
+  {s:"pipeline:.github/workflows/ci.yml",t:"file:tests/test_model.py",type:"triggers"},
+  {s:"pipeline:.github/workflows/ci.yml",t:"file:tests/test_estimator_anchors.py",type:"triggers"},
+  {s:"document:README.md",t:"file:src/lfslab/model.py",type:"documents"},
+  {s:"document:README.md",t:"file:src/lfslab/estimator.py",type:"documents"},
+  {s:"document:README.md",t:"file:app/streamlit_app.py",type:"documents"},
+  {s:"document:reports/technical_note.md",t:"file:src/lfslab/estimator.py",type:"documents",label:"calibration study"},
+  {s:"document:reports/blog_drafts/01-when-the-estimator-breaks.md",t:"file:src/lfslab/estimator.py",type:"documents"},
+  {s:"file:tests/test_model.py",t:"file:src/lfslab/model.py",type:"tested_by"},
+  {s:"file:tests/test_estimator_anchors.py",t:"file:src/lfslab/estimator.py",type:"tested_by"},
+  {s:"file:tests/test_estimator_v2.py",t:"file:src/lfslab/estimator.py",type:"tested_by"},
+  {s:"file:tests/test_train.py",t:"file:src/lfslab/train.py",type:"tested_by"},
+  {s:"file:tests/test_tokenizer.py",t:"file:src/lfslab/tokenizer.py",type:"tested_by"},
+  {s:"file:tests/test_profile.py",t:"file:src/lfslab/profile_train.py",type:"tested_by"},
+  {s:"file:tests/test_smoke.py",t:"file:src/lfslab/train.py",type:"tested_by"},
+  {s:"file:tests/test_app.py",t:"file:app/streamlit_app.py",type:"tested_by"},
+  {s:"file:tests/adapters.py",t:"file:src/lfslab/model.py",type:"related"},
+  {s:"file:tests/adapters.py",t:"file:src/lfslab/tokenizer.py",type:"related"},
+  {s:"config:pyproject.toml",t:"file:src/lfslab/__init__.py",type:"configures"}
+];
+
+const TOUR = [
+  {order:1,title:"Project Overview",desc:"Three stacked artifacts: working LM, closed-form estimator, calibration study showing the JAX Scaling Book formula is off by 65–154%.",ids:["document:README.md"]},
+  {order:2,title:"The Model Core",desc:"model.py: RMSNorm + SwiGLU + RoPE + causal MHA in a pre-norm decoder-only stack.",ids:["file:src/lfslab/model.py","class:model:TransformerLM","class:model:TransformerBlock","class:model:CausalMHA"]},
+  {order:3,title:"Tokenization Pipeline",desc:"Byte-level BPE from scratch with GPT-2 pretokenization, trained on TinyStories.",ids:["file:src/lfslab/tokenizer.py","class:tok:Tokenizer","file:scripts/tokenize_corpus.py","file:src/lfslab/data.py"]},
+  {order:4,title:"Training Loop",desc:"Custom AdamW, cosine schedule, grad clip, checkpointing. Loss 245→2.87 in ~13 min.",ids:["file:src/lfslab/train.py","class:train:AdamW","config:configs/tiny_mps.yaml","config:configs/tiny_cpu.yaml"]},
+  {order:5,title:"Scaling Estimator",desc:"Pure-Python closed-form formulas for params, FLOPs, memory, KV cache, decode latency.",ids:["file:src/lfslab/estimator.py","class:est:ModelSpec","class:est:HardwareSpec","file:src/lfslab/hardware.py"]},
+  {order:6,title:"Profiling Harness",desc:"torch.profiler harness for the MEASURED side — times forward passes across seq×batch grid.",ids:["file:src/lfslab/profile_train.py","file:scripts/cloud_a100_sweep.py"]},
+  {order:7,title:"Calibration Study",desc:"Where the estimator breaks and why. MAE drops 64%→29% after implementing two fixes.",ids:["document:reports/technical_note.md","document:reports/blog_drafts/01-when-the-estimator-breaks.md"]},
+  {order:8,title:"Interactive Explorer",desc:"Streamlit app with 5 Plotly tabs: simulated curves + measured-vs-estimated scatter.",ids:["file:app/streamlit_app.py","file:src/lfslab/plotting.py"]},
+  {order:9,title:"KV-Cache Demo",desc:"O(1)-per-token decode_with_cache() vs naive O(T²) full_recompute_decode() baseline.",ids:["file:src/lfslab/kv_cache_toy.py"]},
+  {order:10,title:"Tests & CI",desc:"68 tests including 8 JAX Scaling Book anchor tests. GitHub Actions on every push.",ids:["file:tests/test_estimator_anchors.py","file:tests/test_model.py","file:tests/test_smoke.py","pipeline:.github/workflows/ci.yml"]}
+];
+
+// ─── Setup ───────────────────────────────────────────────────────────────────
+const nodeById = Object.fromEntries(NODES_RAW.map(n=>[n.id,n]));
+const layerCounts = {};
+NODES_RAW.forEach(n=>{ layerCounts[n.layer]=(layerCounts[n.layer]||0)+1; });
+
+document.getElementById('s-nodes').textContent = NODES_RAW.length;
+document.getElementById('s-edges').textContent = EDGES_RAW.length;
+document.getElementById('s-layers').textContent = LAYERS.length;
+document.getElementById('hdr-counts').textContent = `${NODES_RAW.length} nodes · ${EDGES_RAW.length} edges`;
+
+// ─── Canvas size ─────────────────────────────────────────────────────────────
+const canvasEl = document.getElementById('canvas');
+let W = canvasEl.clientWidth, H = canvasEl.clientHeight;
+
+// ─── Layer cluster centres (arranged in a circle) ─────────────────────────────
+const layerOrder = LAYERS.map(l=>l.id);
+const clusterCentre = {};
+layerOrder.forEach((id,i)=>{
+  const angle = (i/layerOrder.length)*2*Math.PI - Math.PI/2;
+  const r = Math.min(W,H)*0.32;
+  clusterCentre[id] = { x: W/2 + r*Math.cos(angle), y: H/2 + r*Math.sin(angle) };
+});
+
+// ─── Initialise node positions near cluster centre ────────────────────────────
+const nodes = NODES_RAW.map(d=>{
+  const c = clusterCentre[d.layer] || {x:W/2,y:H/2};
+  return { ...d, x: c.x + (Math.random()-.5)*80, y: c.y + (Math.random()-.5)*80 };
+});
+
+const edges = EDGES_RAW.map(e=>({ ...e, source:e.s, target:e.t }));
+
+// ─── Node helpers ─────────────────────────────────────────────────────────────
+function nodeColor(d){ return LAYER_COLOR[d.layer]||'#8b949e'; }
+function nodeR(d){
+  if(d.type==='class') return 7;
+  if(d.complexity==='complex') return 13;
+  if(d.complexity==='moderate') return 10;
+  return 8;
+}
+function markerFor(type){
+  const m={imports:'m-imp',tested_by:'m-test',configures:'m-cfg',documents:'m-doc',triggers:'m-trg'};
+  return `url(#${m[type]||'m-def'})`;
+}
+
+// ─── D3 simulation ────────────────────────────────────────────────────────────
+const sim = d3.forceSimulation(nodes)
+  .force('link', d3.forceLink(edges).id(d=>d.id)
+    .distance(d=>d.type==='contains'?30:90)
+    .strength(d=>d.type==='contains'?0.9:0.25))
+  .force('charge', d3.forceManyBody().strength(-250))
+  .force('cluster', alpha=>{
+    nodes.forEach(d=>{
+      const c=clusterCentre[d.layer];
+      if(!c) return;
+      d.vx -= (d.x-c.x)*alpha*0.06;
+      d.vy -= (d.y-c.y)*alpha*0.06;
+    });
+  })
+  .force('collide', d3.forceCollide().radius(d=>nodeR(d)+5))
+  .alphaDecay(0.025);
+
+// Pre-warm so nodes are in reasonable positions before first paint
+for(let i=0;i<80;i++) sim.tick();
+
+// ─── SVG refs ────────────────────────────────────────────────────────────────
+const svg    = d3.select('#graph-svg');
+const zroot  = svg.select('#zroot');
+const lgEl   = zroot.select('#lg');
+const ngEl   = zroot.select('#ng');
+
+// ─── Zoom ─────────────────────────────────────────────────────────────────────
+const zoom = d3.zoom().scaleExtent([0.08,5])
+  .on('zoom', e=>{ zroot.attr('transform', e.transform); });
+svg.call(zoom);
+
+// Fit all nodes into view on start
+function fitView(){
+  const xs=nodes.map(d=>d.x), ys=nodes.map(d=>d.y);
+  const x0=Math.min(...xs)-30, x1=Math.max(...xs)+30;
+  const y0=Math.min(...ys)-30, y1=Math.max(...ys)+30;
+  const scale=Math.min(W/(x1-x0),H/(y1-y0))*0.88;
+  const tx=W/2-(x0+x1)/2*scale, ty=H/2-(y0+y1)/2*scale;
+  svg.call(zoom.transform, d3.zoomIdentity.translate(tx,ty).scale(scale));
+}
+fitView();
+
+// ─── Links ───────────────────────────────────────────────────────────────────
+const link = lgEl.selectAll('line')
+  .data(edges).join('line')
+  .attr('class', d=>`glink ${d.type}`)
+  .attr('marker-end', d=>d.type!=='contains'&&d.type!=='related'?markerFor(d.type):null);
+
+// ─── Nodes ───────────────────────────────────────────────────────────────────
+const node = ngEl.selectAll('g')
+  .data(nodes).join('g')
+  .attr('class','gnode')
+  .call(d3.drag()
+    .on('start',(e,d)=>{ if(!e.active) sim.alphaTarget(0.3).restart(); d.fx=d.x;d.fy=d.y; })
+    .on('drag', (e,d)=>{ d.fx=e.x; d.fy=e.y; })
+    .on('end',  (e,d)=>{ if(!e.active) sim.alphaTarget(0); d.fx=null; d.fy=null; }))
+  .on('click',(e,d)=>{ e.stopPropagation(); selectNode(d); })
+  .on('mouseover',(e,d)=>showTip(e,d))
+  .on('mousemove', e=>moveTip(e))
+  .on('mouseout',  ()=>hideTip());
+
+node.append('circle')
+  .attr('r', d=>nodeR(d))
+  .attr('fill', d=>nodeColor(d)+'bb')
+  .attr('stroke', d=>nodeColor(d));
+
+// Letter badge for classes
+node.filter(d=>d.type==='class').append('text')
+  .attr('text-anchor','middle').attr('dominant-baseline','central')
+  .attr('font-size','7px').attr('font-weight','700').attr('fill','#fff')
+  .text(d=>d.name[0].toUpperCase());
+
+node.append('text')
+  .attr('class','node-label')
+  .attr('text-anchor','middle')
+  .attr('y', d=>nodeR(d)+11)
+  .attr('font-size','10px')
+  .text(d=>d.name.length>18?d.name.slice(0,16)+'…':d.name);
+
+// ─── Tick ─────────────────────────────────────────────────────────────────────
+sim.on('tick',()=>{
+  link
+    .attr('x1',d=>d.source.x).attr('y1',d=>d.source.y)
+    .attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
+  node.attr('transform',d=>`translate(${d.x},${d.y})`);
+});
+
+// ─── Dismiss on canvas click ──────────────────────────────────────────────────
+svg.on('click',()=>clearSel());
+
+// ─── Tooltip ─────────────────────────────────────────────────────────────────
+const tip=document.getElementById('tip');
+function showTip(e,d){
+  tip.style.display='block';
+  tip.innerHTML=`<b>${d.name}</b><br><span style="color:var(--text-muted)">${d.type} · ${d.layer}</span>`;
+  moveTip(e);
+}
+function moveTip(e){
+  const r=canvasEl.getBoundingClientRect();
+  tip.style.left=(e.clientX-r.left+14)+'px';
+  tip.style.top=(e.clientY-r.top+14)+'px';
+}
+function hideTip(){ tip.style.display='none'; }
+
+// ─── Selection + info panel ───────────────────────────────────────────────────
+const infoEl=document.getElementById('info');
+document.getElementById('info-close').addEventListener('click',clearSel);
+
+function selectNode(d){
+  const connIds=new Set([d.id]);
+  edges.forEach(e=>{
+    const s=typeof e.source==='object'?e.source.id:e.source;
+    const t=typeof e.target==='object'?e.target.id:e.target;
+    if(s===d.id||t===d.id){ connIds.add(s); connIds.add(t); }
+  });
+  node.classed('hi',n=>n.id===d.id).classed('dimmed',n=>!connIds.has(n.id));
+  link.classed('dimmed',e=>{
+    const s=typeof e.source==='object'?e.source.id:e.source;
+    const t=typeof e.target==='object'?e.target.id:e.target;
+    return !(s===d.id||t===d.id);
+  });
+
+  // Panel content
+  document.getElementById('ip-type').textContent=`${d.type.toUpperCase()} · ${d.layer}`;
+  document.getElementById('ip-name').textContent=d.name;
+  document.getElementById('ip-path').textContent=d.filePath||d.id;
+  document.getElementById('ip-summary').textContent=d.summary||'—';
+  document.getElementById('ip-tags').innerHTML=(d.tags||[]).map(t=>`<span class="ip-tag">${t}</span>`).join('');
+
+  const out=edges.filter(e=>{const s=typeof e.source==='object'?e.source.id:e.source;return s===d.id&&e.type!=='contains';});
+  const inn=edges.filter(e=>{const t=typeof e.target==='object'?e.target.id:e.target;return t===d.id&&e.type!=='contains';});
+  let html='';
+  if(out.length){
+    html+=`<div class="ip-edge-head">→ Outgoing (${out.length})</div>`;
+    out.forEach(e=>{
+      const tid=typeof e.target==='object'?e.target.id:e.target;
+      const tn=nodeById[tid];
+      html+=`<div class="ip-edge-item" data-id="${tid}">[${e.type}] ${tn?tn.name:tid}</div>`;
+    });
+  }
+  if(inn.length){
+    html+=`<div class="ip-edge-head">← Incoming (${inn.length})</div>`;
+    inn.forEach(e=>{
+      const sid=typeof e.source==='object'?e.source.id:e.source;
+      const sn=nodeById[sid];
+      html+=`<div class="ip-edge-item" data-id="${sid}">[${e.type}] ${sn?sn.name:sid}</div>`;
+    });
+  }
+  document.getElementById('ip-edges').innerHTML=html;
+  document.querySelectorAll('.ip-edge-item').forEach(el=>{
+    el.addEventListener('click',()=>{ const n=nodeById[el.dataset.id]; if(n) selectNode(n); });
+  });
+  infoEl.classList.add('show');
+}
+
+function clearSel(){
+  node.classed('hi',false).classed('dimmed',false);
+  link.classed('dimmed',false);
+  infoEl.classList.remove('show');
+}
+
+// ─── Legend ───────────────────────────────────────────────────────────────────
+const hiddenLayers=new Set();
+const layerTabEl=document.getElementById('tab-layers');
+LAYERS.forEach(layer=>{
+  const el=document.createElement('div');
+  el.className='legend-item';
+  el.innerHTML=`<div class="leg-dot" style="background:${layer.color}"></div>
+    <span>${layer.name}</span><span class="leg-count">${layerCounts[layer.id]||0}</span>`;
+  el.addEventListener('click',()=>{
+    if(hiddenLayers.has(layer.id)){ hiddenLayers.delete(layer.id); el.classList.remove('muted'); }
+    else { hiddenLayers.add(layer.id); el.classList.add('muted'); }
+    applyLayerVis();
+  });
+  layerTabEl.appendChild(el);
+});
+function applyLayerVis(){
+  node.style('display',d=>hiddenLayers.has(d.layer)?'none':null);
+  link.style('display',e=>{
+    const sn=nodeById[typeof e.source==='object'?e.source.id:e.source];
+    const tn=nodeById[typeof e.target==='object'?e.target.id:e.target];
+    return (sn&&hiddenLayers.has(sn.layer))||(tn&&hiddenLayers.has(tn.layer))?'none':null;
+  });
+}
+
+// ─── Tour ─────────────────────────────────────────────────────────────────────
+const tourTabEl=document.getElementById('tab-tour');
+TOUR.forEach(step=>{
+  const el=document.createElement('div');
+  el.className='tour-item';
+  el.innerHTML=`<div class="tour-num">Step ${step.order} / ${TOUR.length}</div>
+    <div class="tour-title">${step.title}</div>
+    <div class="tour-desc">${step.desc}</div>`;
+  el.addEventListener('click',()=>{
+    document.querySelectorAll('.tour-item').forEach(i=>i.classList.remove('active'));
+    el.classList.add('active');
+    const ids=new Set(step.ids);
+    clearSel();
+    node.classed('dimmed',d=>!ids.has(d.id)).classed('hi',d=>ids.has(d.id));
+    link.classed('dimmed',e=>{
+      const s=typeof e.source==='object'?e.source.id:e.source;
+      const t=typeof e.target==='object'?e.target.id:e.target;
+      return !(ids.has(s)&&ids.has(t));
+    });
+    // Pan toward first highlighted node
+    const first=nodes.find(n=>ids.has(n.id)&&n.x!=null);
+    if(first){
+      const t=d3.zoomTransform(svg.node());
+      svg.transition().duration(500).call(zoom.translateTo,first.x,first.y);
+    }
+  });
+  tourTabEl.appendChild(el);
+});
+
+// ─── Controls ─────────────────────────────────────────────────────────────────
+let paused=false;
+document.getElementById('btn-pause').addEventListener('click',function(){
+  paused=!paused; this.textContent=paused?'Resume':'Pause';
+  paused?sim.stop():sim.restart();
+});
+document.getElementById('btn-reset').addEventListener('click',()=>{ clearSel(); fitView(); });
+document.getElementById('r-charge').addEventListener('input',function(){
+  sim.force('charge').strength(+this.value); sim.alpha(0.3).restart();
+});
+document.getElementById('r-labels').addEventListener('input',function(){
+  node.selectAll('text.node-label').attr('font-size',this.value+'px');
+});
+document.getElementById('btn-imports').addEventListener('click',()=>{
+  link.style('display',e=>e.type==='imports'?null:'none');
+});
+document.getElementById('btn-all').addEventListener('click',()=>{
+  link.style('display',null); applyLayerVis();
+});
+
+// ─── Search ───────────────────────────────────────────────────────────────────
+document.getElementById('search').addEventListener('input',function(){
+  const q=this.value.toLowerCase().trim();
+  if(!q){ node.classed('dimmed',false).classed('hi',false); link.classed('dimmed',false); return; }
+  const match=d=>d.name.toLowerCase().includes(q)||(d.tags||[]).some(t=>t.includes(q));
+  node.classed('hi',match).classed('dimmed',d=>!match(d));
+  link.classed('dimmed',true);
+});
+
+// ─── Tab switching ────────────────────────────────────────────────────────────
+const sysView   = document.getElementById('system-view');
+const ctxView   = document.getElementById('context-view');
+const graphSvg  = document.getElementById('graph-svg');
+const statsBar  = document.getElementById('stats');
+
+document.querySelectorAll('.tab').forEach(tab=>{
+  tab.addEventListener('click',()=>{
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-'+tab.dataset.tab).classList.add('active');
+
+    const t = tab.dataset.tab;
+    const isGraph = t !== 'system' && t !== 'context';
+    sysView.classList.toggle('show',  t === 'system');
+    ctxView.classList.toggle('show',  t === 'context');
+    graphSvg.style.display  = isGraph ? 'block' : 'none';
+    statsBar.style.display  = isGraph ? 'flex'  : 'none';
+    if(!isGraph) infoEl.classList.remove('show');
+  });
+});
+
+// ─── Resize ───────────────────────────────────────────────────────────────────
+window.addEventListener('resize',()=>{
+  W=canvasEl.clientWidth; H=canvasEl.clientHeight;
+  sim.force('charge').strength(+document.getElementById('r-charge').value);
+  sim.alpha(0.1).restart();
+});
+</script>
+</body>
+</html>
