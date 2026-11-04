@@ -24,6 +24,12 @@ def load_token_stream(path: str | Path) -> np.ndarray:
 
 
 def save_token_stream(path: str | Path, ids: list[int] | np.ndarray) -> None:
-    arr = np.asarray(ids, dtype=np.uint16 if max(ids) < 2**16 else np.uint32)
+    """Save token ids as a 1-D .npy array (uint16 if all ids fit, else uint32).
+
+    An empty ``ids`` is saved as an empty uint16 array rather than raising.
+    """
+    ids = np.asarray(ids)
+    dtype = np.uint16 if ids.size == 0 or ids.max() < 2**16 else np.uint32
+    arr = ids.astype(dtype)
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     np.save(path, arr)
