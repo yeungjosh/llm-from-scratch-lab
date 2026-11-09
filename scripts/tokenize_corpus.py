@@ -16,8 +16,7 @@ import argparse
 import time
 from pathlib import Path
 
-import numpy as np
-
+from lfslab.data import save_token_stream
 from lfslab.tokenizer import Tokenizer, train_bpe
 
 
@@ -58,9 +57,7 @@ def main() -> None:
         t0 = time.time()
         text = Path(in_path).read_text(encoding="utf-8")
         ids = tok.encode(text)
-        Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-        arr = np.asarray(ids, dtype=np.uint16 if max(ids) < 2**16 else np.uint32)
-        np.save(out_path, arr)
+        save_token_stream(out_path, ids)
         print(
             f"[tok] {in_path}: {len(text):,} chars -> {len(ids):,} tokens "
             f"({time.time() - t0:.1f}s) -> {out_path}"
