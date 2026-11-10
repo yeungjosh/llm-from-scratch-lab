@@ -87,7 +87,7 @@ def test_adamw_reduces_quadratic_loss():
         loss = (x**2).sum()
         loss.backward()
         opt.step()
-        losses.append(float(loss))
+        losses.append(float(loss.detach()))
     assert losses[-1] < losses[0] * 0.05
 
 
@@ -100,7 +100,7 @@ def test_adamw_weight_decay_shrinks_param():
         loss = (x**2).sum()
         loss.backward()
         opt.step()
-    assert abs(float(x)) < 0.5
+    assert abs(float(x.detach())) < 0.5
 
 
 def test_checkpoint_save_load_round_trip(tmp_path: Path):
@@ -158,7 +158,7 @@ def test_smoke_training_loss_decreases():
         loss.backward()
         gradient_clipping(model.parameters(), 1.0)
         opt.step()
-        losses.append(float(loss))
+        losses.append(float(loss.detach()))
 
     assert losses[-1] < losses[0] * 0.5, f"loss did not drop enough: {losses[0]} -> {losses[-1]}"
 
