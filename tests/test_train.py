@@ -158,7 +158,7 @@ def test_smoke_training_loss_decreases():
         loss.backward()
         gradient_clipping(model.parameters(), 1.0)
         opt.step()
-        losses.append(float(loss))
+        losses.append(float(loss.detach()))
 
     assert losses[-1] < losses[0] * 0.5, f"loss did not drop enough: {losses[0]} -> {losses[-1]}"
 
