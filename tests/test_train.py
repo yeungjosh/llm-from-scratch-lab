@@ -100,7 +100,7 @@ def test_adamw_weight_decay_shrinks_param():
         loss = (x**2).sum()
         loss.backward()
         opt.step()
-    assert abs(float(x)) < 0.5
+    assert abs(float(x.detach())) < 0.5
 
 
 def test_checkpoint_save_load_round_trip(tmp_path: Path):
