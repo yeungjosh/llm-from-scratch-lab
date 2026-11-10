@@ -87,7 +87,7 @@ def test_adamw_reduces_quadratic_loss():
         loss = (x**2).sum()
         loss.backward()
         opt.step()
-        losses.append(float(loss))
+        losses.append(float(loss.detach()))
     assert losses[-1] < losses[0] * 0.05
 
 

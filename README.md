@@ -35,7 +35,7 @@ Most "GPT from scratch" repos stop at (1). The interesting questions live in (2)
 git clone https://github.com/yeungjosh/llm-from-scratch-lab
 cd llm-from-scratch-lab
 uv sync                              # installs torch, streamlit, plotly, ...
-uv run pytest -q                     # 64/64 green
+uv run pytest -q                     # all tests green (86 at time of writing)
 uv run streamlit run app/streamlit_app.py   # interactive explorer
 
 # end-to-end demo: train a tiny model + run a benchmark sweep
