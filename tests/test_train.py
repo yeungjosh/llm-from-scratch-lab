@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import math
+
 import numpy as np
 import torch
 
@@ -16,6 +18,7 @@ from lfslab.train import (
     gradient_clipping,
     load_checkpoint,
     save_checkpoint,
+    validation_perplexity,
 )
 
 
@@ -187,3 +190,57 @@ def test_adapter_wiring():
     assert p.grad.norm().item() <= 1.0 + 1e-4
 
     assert run_get_lr_cosine_schedule(5, 1.0, 0.1, 10, 100) > 0
+
+
+class _UniformLogits(torch.nn.Module):
+    """Stub LM that predicts a uniform distribution over ``vocab`` tokens."""
+
+    def __init__(self, vocab: int) -> None:
+        super().__init__()
+        self.vocab = vocab
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.zeros(*x.shape, self.vocab)
+
+
+def test_validation_perplexity_uniform_model_equals_vocab_size():
+    """A model with uniform logits has perplexity exactly V (loss = ln V)."""
+    V = 50
+    data = np.random.default_rng(0).integers(0, V, size=500, dtype=np.int64)
+    ppl = validation_perplexity(
+        _UniformLogits(V), data, context_length=8, batch_size=4, device="cpu", num_batches=3
+    )
+    assert math.isclose(ppl, V, rel_tol=1e-5)
+
+
+def test_validation_perplexity_trained_beats_untrained():
+    """Perplexity on a deterministic bigram corpus drops after a few train steps."""
+    torch.manual_seed(0)
+    V, ctx = 32, 8
+    data = np.tile(np.arange(V, dtype=np.int64), 100)
+    model = TransformerLM(
+        vocab_size=V, context_length=ctx, d_model=32,
+        num_layers=2, num_heads=4, d_ff=64,
+    )
+    before = validation_perplexity(model, data, ctx, 8, "cpu", num_batches=5)
+    opt = AdamW(model.parameters(), lr=3e-3, weight_decay=0.0)
+    for _ in range(40):
+        x, y = get_batch(data, batch_size=8, context_length=ctx, device="cpu")
+        loss = cross_entropy(model(x), y)
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+    after = validation_perplexity(model, data, ctx, 8, "cpu", num_batches=5)
+    assert before > 0 and after > 0
+    assert after < before
+
+
+def test_validation_perplexity_does_not_track_gradients():
+    V = 16
+    model = TransformerLM(
+        vocab_size=V, context_length=8, d_model=16,
+        num_layers=1, num_heads=2, d_ff=32,
+    )
+    data = np.arange(200, dtype=np.int64) % V
+    validation_perplexity(model, data, 8, 2, "cpu", num_batches=2)
+    assert all(p.grad is None for p in model.parameters())
